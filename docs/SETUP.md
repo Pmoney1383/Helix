@@ -13,7 +13,8 @@ The quick version is in the [README](../README.md).
 - **Tailscale** on the PC and the iPhone, signed in to the same tailnet, with
   [HTTPS certificates enabled](https://tailscale.com/kb/1153/enabling-https) for the tailnet (iOS requires HTTPS).
 - **A Mac with Xcode** to build the iPhone app. A paid Apple Developer account is needed for push, calls, Siri and
-  installing for longer than a week; see [ios/README.md](../ios/README.md).
+  installing for longer than a week; see [ios/README.md](../ios/README.md). Or **Android Studio** to build the Android
+  app, which needs no developer account or push key; see [android/README.md](../android/README.md).
 
 ## 2. Install and configure the gateway
 
@@ -100,7 +101,8 @@ already open. Undo everything with `npm run helix -- disconnect`.
 
 ## 6. Build the app and pair
 
-Build and install the iPhone app as described in [ios/README.md](../ios/README.md). Then:
+Build and install the iPhone app as described in [ios/README.md](../ios/README.md), or the Android app as described in
+[android/README.md](../android/README.md). Then:
 
 1. On the PC: `npm run pair`. It prints a one-time code, valid for 5 minutes.
 2. In the app: **Settings > Pair with Your PC**. Enter `https://<pc>.<tailnet>.ts.net` (pre-filled if you set

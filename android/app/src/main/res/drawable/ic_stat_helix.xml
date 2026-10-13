@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Helix mark (two crossed orbits) for the status bar: white on transparent, as Android requires. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <group android:pivotX="12" android:pivotY="12" android:rotation="-38">
+        <path
+            android:pathData="M1.5,12 A10.5,5 0 1,0 22.5,12 A10.5,5 0 1,0 1.5,12 Z"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="2" />
+    </group>
+    <group android:pivotX="12" android:pivotY="12" android:rotation="38">
+        <path
+            android:pathData="M1.5,12 A10.5,5 0 1,0 22.5,12 A10.5,5 0 1,0 1.5,12 Z"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="2" />
+    </group>
+</vector>

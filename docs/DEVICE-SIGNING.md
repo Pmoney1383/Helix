@@ -4,8 +4,12 @@ Pairing gives the phone a bearer token. On its own, anyone who copies that token
 signing adds a second factor: a private key that stays on the phone. Once the gateway knows the matching public key,
 every request from that device must carry a valid signature, so a stolen token alone is no longer enough.
 
-Gateway: `pc-gateway/src/api/device-signing.ts` and `pc-gateway/src/api/auth.ts`. App:
-`ios/Helix/Services/Gateway/DeviceSigner.swift`.
+Gateway: `pc-gateway/src/api/device-signing.ts` and `pc-gateway/src/api/auth.ts`. Apps:
+`ios/Helix/Services/Gateway/DeviceSigner.swift` and `android/app/src/main/java/app/helix/gateway/DeviceSigner.kt`.
+
+**On Android** the key is an ECDSA P-256 key in the Android Keystore, in StrongBox (a separate secure chip) when the
+phone has one and in the TEE otherwise; it cannot be exported. Signatures are DER-encoded, which the gateway accepts
+as well as the iPhone's raw form. Enrollment, the signed headers, the Settings row and recovery are the same as below.
 
 ## The key on the phone
 

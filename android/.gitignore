@@ -1,0 +1,14 @@
+# Gradle and Android Studio
+.gradle/
+.kotlin/
+build/
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+# Your own values (sdk.dir, helix.applicationId, helix.gatewayHost)
+local.properties
+# Signing material never belongs in the repo
+*.jks
+*.keystore

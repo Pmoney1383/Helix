@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The gateway is reached over HTTPS (Tailscale Serve). Plain HTTP is refused, as on the iPhone. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

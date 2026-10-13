@@ -7,6 +7,9 @@ it to your own gateway. This takes about 15 minutes once you have a paid account
 Without it, Helix still works: approvals, events and replies arrive in the app over the live connection. You just get
 no notifications or calls while the app is closed.
 
+**This page is for the iPhone.** The Android app needs none of it: it keeps the live connection open in the background
+and receives notifications and calls through it ([android/README.md](../android/README.md)).
+
 ## What you need
 
 - A paid [Apple Developer Program](https://developer.apple.com/programs/) membership (push, VoIP and Siri are not

@@ -2,13 +2,13 @@
 
 Follow and steer your **Claude Code** and **Codex** sessions from your phone while you are away from your PC.
 
-Helix is a small always-on gateway that runs on your Windows PC, plus an iPhone app (with CarPlay and Siri) that
-talks to it over your private Tailscale network. Your agents keep running on your own machine with your own
+Helix is a small always-on gateway that runs on your Windows PC, plus an iPhone app (with CarPlay and Siri) and an
+Android app that talk to it over your private Tailscale network. Your agents keep running on your own machine with your own
 logins. Helix lets you chat with them, get pinged when something finishes or breaks, and approve or reject anything
 destructive from your phone.
 
 ```
-iPhone / CarPlay  --HTTPS + WebSocket (Tailscale)-->  PC gateway (Windows service)  -->  Claude Code / Codex sessions
+iPhone / CarPlay, Android  --HTTPS + WebSocket (Tailscale)-->  PC gateway (Windows service)  -->  Claude Code / Codex sessions
 ChatGPT / claude.ai  --hosted MCP (Tailscale Funnel, OAuth)-->  same gateway   (optional)
 ```
 
@@ -265,11 +265,12 @@ Some of these use features exactly as built; the agent-to-agent ones need a host
 |---|---|
 | PC | Windows 10/11, Node.js 24 (tested; 22 is the declared minimum), [Claude Code](https://claude.com/claude-code) logged in; [Codex CLI](https://github.com/openai/codex) optional |
 | Network | [Tailscale](https://tailscale.com) on the PC and the phone (the same tailnet) |
-| Phone | iPhone on iOS 26+, built yourself from `ios/` with Xcode on a Mac |
-| Push and calls | A paid Apple Developer account and your own APNs key ([docs/PUSH-SETUP.md](docs/PUSH-SETUP.md)) |
+| Phone | iPhone on iOS 26+, built yourself from `ios/` with Xcode on a Mac; or Android 8.0+, built from `android/` with Android Studio |
+| Push and calls | iPhone: a paid Apple Developer account and your own APNs key ([docs/PUSH-SETUP.md](docs/PUSH-SETUP.md)). Android: nothing, they arrive over the app's live connection |
 
-Without an APNs key, everything still works in the app over the live connection, but you get no push notifications or
-incoming calls. An Android app is planned.
+Without an APNs key, the iPhone app still works over the live connection, but you get no push notifications or
+incoming calls while it is closed. The Android app keeps that connection open in the background, so it gets both
+without any key ([android/README.md](android/README.md)).
 
 ## Quick start
 
@@ -294,7 +295,7 @@ npm run helix -- connect
 npm run pair
 ```
 
-Then build the iPhone app ([ios/README.md](ios/README.md)), enter your `https://<pc>.<tailnet>.ts.net` address and
+Then build the iPhone app ([ios/README.md](ios/README.md)) or the Android app ([android/README.md](android/README.md)), enter your `https://<pc>.<tailnet>.ts.net` address and
 the code, and you are connected. The full walkthrough is [docs/SETUP.md](docs/SETUP.md).
 
 ## Documentation
@@ -303,6 +304,7 @@ the code, and you are connected. The full walkthrough is [docs/SETUP.md](docs/SE
 |---|---|
 | [docs/SETUP.md](docs/SETUP.md) | Full setup: gateway, service, Tailscale, connecting agents, pairing, updating |
 | [ios/README.md](ios/README.md) | Building the iPhone app with your own team and bundle ID |
+| [android/README.md](android/README.md) | Building the Android app, and how alerts and calls reach it without a push service |
 | [docs/PUSH-SETUP.md](docs/PUSH-SETUP.md) | Push notifications and calls: your own APNs key, step by step |
 | [docs/PERSONA.md](docs/PERSONA.md) | Voice personality modes (professional by default) and the safety clamp |
 | [docs/LOCAL-TTS.md](docs/LOCAL-TTS.md) | Optional local PC voice: how to plug in your own TTS model |
@@ -321,7 +323,7 @@ the code, and you are connected. The full walkthrough is [docs/SETUP.md](docs/SE
 
 - The gateway listens on `127.0.0.1` only. Your phone reaches it through `tailscale serve`, which is TLS and tailnet-only.
 - Phones pair with a one-time code that only the PC's terminal can create, and get a revocable bearer token.
-  The app also signs every request with a key kept in the phone's Secure Enclave, and the gateway can require it
+  The apps also sign every request with a key kept in the phone's Secure Enclave or Android Keystore, and the gateway can require it
   ([docs/DEVICE-SIGNING.md](docs/DEVICE-SIGNING.md)).
 - The destructive-action classifier is a strong guardrail, not a sandbox. Pattern matching cannot catch everything
   (for example, an agent writing a script that deletes files and then running it). Keep backups of anything irreplaceable.
@@ -332,7 +334,7 @@ Please report vulnerabilities privately, as described in [SECURITY.md](SECURITY.
 ## Status
 
 Helix is a personal project that became open source. The gateway is well tested (700+ tests) and used daily. The
-iPhone app works but is still in progress. Windows is the only supported PC platform for now; macOS and Linux
+iPhone and Android apps work but are still in progress. Windows is the only supported PC platform for now; macOS and Linux
 gateways are on the list.
 
 ## License

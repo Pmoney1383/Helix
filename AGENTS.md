@@ -9,7 +9,7 @@ chat, push notifications, approvals, calls, Siri, status watchers, and an option
 the PC does the work; the phone talks to it over Tailscale.
 
 ```
-iPhone / CarPlay  --HTTPS + WebSocket (Tailscale)-->  PC gateway (Windows service)  -->  Claude Code / Codex sessions
+iPhone / CarPlay, Android  --HTTPS + WebSocket (Tailscale)-->  PC gateway (Windows service)  -->  Claude Code / Codex sessions
 ChatGPT / claude.ai  --hosted MCP (Tailscale Funnel, OAuth)-->  same gateway   (optional)
 ```
 
@@ -22,8 +22,9 @@ user's approval** (on the phone when they are away).
 |---|---|
 | `pc-gateway/` | The gateway: Node 24 (tested; `engines` says `>=22`), TypeScript (ESM), Fastify, better-sqlite3, MCP SDK, zod. Runs on Windows. |
 | `ios/` | The SwiftUI app (`ios/Helix/`), Siri extension, token generator (`ios/scripts/`). Built on a Mac. |
+| `android/` | The Android app: Kotlin and Jetpack Compose, a screen-for-screen translation of `ios/Helix/`. Built with Android Studio ([android/README.md](android/README.md)). |
 | `mods/usage-guard/` | Claude Code mod: live context size and 5-hour usage left above the prompt. |
-| `design/` | `home-screen.png` and `tokens.json` (black/gold palette, the source of the Swift colour tokens). |
+| `design/` | `home-screen.png` and `tokens.json` (black/gold palette, the source of the Swift and Kotlin colour tokens). |
 | `docs/` | Setup and design docs (see below). |
 
 ### Docs
