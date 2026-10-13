@@ -2,8 +2,8 @@
 //
 //   npm run voice -- clips [--out <dir>] [--force]
 //
-// Needs the PC voice configured in pc-gateway/.env (HELIX_TTS_PYTHON, HELIX_TTS_QWEN_ROOT) and a free GPU (it will not start while
-// another job is using it). Writes <dir>/*.wav and <dir>/manifest.json; point HELIX_TTS_CLIPS_DIR at <dir>.
+// Needs the PC voice configured in pc-gateway/.env (docs/LOCAL-TTS.md) and a free GPU: it will not start while another job,
+// including the gateway's own loaded voice (POST /v1/voice/tts/stop), is using it. Writes <dir>/*.wav and <dir>/manifest.json; point HELIX_TTS_CLIPS_DIR at <dir>.
 // Clips that already exist are kept (so an interrupted run carries on); --force records everything again.
 import fs from "node:fs";
 import path from "node:path";

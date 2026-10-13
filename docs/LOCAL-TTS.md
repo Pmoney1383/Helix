@@ -25,7 +25,8 @@ under its own license, and point Helix at it.
 ## Built-in engines
 
 `HELIX_TTS_ENGINE` selects one. Each needs a Python environment with the model's own package and a CUDA build of PyTorch
-that matches your GPU.
+that matches your GPU. Upgrade pip in a new venv first (`python -m pip install --upgrade pip`): an old pip can fail to
+install PyTorch from its own index (it tries to build `typing-extensions` from source and cannot find `flit_core`).
 
 ### `chatterbox`: simplest, Windows
 
@@ -33,8 +34,11 @@ that matches your GPU.
 
 ```powershell
 py -3.11 -m venv C:\helix-tts\venv
-C:\helix-tts\venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cu128   # pick the CUDA build for your GPU
+C:\helix-tts\venv\Scripts\python -m pip install --upgrade pip
 C:\helix-tts\venv\Scripts\pip install chatterbox-tts
+# chatterbox-tts pins PyTorch 2.6 (CUDA 12.4), which does not run on RTX 50-series GPUs. If yours is one, or
+# torch.cuda.is_available() is False, put a newer CUDA build on top (pip then warns about the pin; it still works):
+C:\helix-tts\venv\Scripts\pip install --upgrade torch torchaudio --index-url https://download.pytorch.org/whl/cu128
 ```
 
 ```
@@ -46,8 +50,7 @@ HELIX_TTS_HF_HOME=C:\helix-tts\hf                  # optional: where model downl
 ```
 
 The style "normal" uses expressive settings and "serious" (critical alerts, approvals) a calm set. Both are in
-`STYLES` at the top of the server script. If `chatterbox-tts` pins a PyTorch that does not support your GPU, install it
-with `--no-deps` on top of a newer PyTorch and add its other dependencies by hand.
+`STYLES` at the top of the server script.
 
 ### `qwen3`: Qwen3-TTS zero-shot clone, Windows
 
@@ -63,7 +66,15 @@ C:\helix-tts\qwen\
   ref\ref.wav
 ```
 
-Install the `qwen-tts` package (providing `qwen_tts.Qwen3TTSModel`) into a Python environment with CUDA PyTorch, then:
+Install `qwen-tts` from PyPI (it provides `qwen_tts.Qwen3TTSModel`) into a Python environment with CUDA PyTorch (it can
+share the Chatterbox venv), and download the model from Hugging Face:
+
+```powershell
+C:\helix-tts\venv\Scripts\pip install qwen-tts
+C:\helix-tts\venv\Scripts\hf download Qwen/Qwen3-TTS-12Hz-1.7B-Base --local-dir C:\helix-tts\qwen\models\Qwen3-TTS-12Hz-1.7B-Base
+```
+
+Then:
 
 ```
 HELIX_TTS_ENABLED=true
@@ -81,8 +92,16 @@ play without gaps (`HELIX_TTS_SMOOTH_HOLD_SEC`, default 12, 0 = no holding).
 The same model with incremental streaming and compiled kernels, which need Triton and so run on Linux. The gateway starts
 it inside WSL2 through `wsl.exe`. Expect first audio in about 0.1 s and generation several times faster than real time.
 
-1. In your WSL2 distro, create a Python venv with CUDA PyTorch and install a streaming-capable fork of Qwen3-TTS as
-   `qwen_tts` (one that provides `stream_generate_voice_clone`, for example `dffdeeq/Qwen3-TTS-streaming`) plus Triton.
+1. In your WSL2 distro, install the build tools Triton needs to compile at start-up (without them the start fails with
+   `Python.h: No such file or directory`), then a venv with CUDA PyTorch and a streaming-capable fork of Qwen3-TTS as
+   `qwen_tts` (one that provides `stream_generate_voice_clone`). Triton comes with PyTorch on Linux.
+
+   ```bash
+   sudo apt install python3-venv python3-dev build-essential
+   python3 -m venv ~/helix-tts/venv && ~/helix-tts/venv/bin/python -m pip install --upgrade pip
+   ~/helix-tts/venv/bin/pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+   ~/helix-tts/venv/bin/pip install git+https://github.com/dffdeeq/Qwen3-TTS-streaming
+   ```
 2. Copy the workspace layout above to a Linux path (for example `~/helix-tts/qwen`), with `ref.json` pointing at the Linux copy of `ref.wav`.
 3. Configure:
 
@@ -117,8 +136,11 @@ names its reason: `disabled`, `not_configured`, `gpu_busy`, `gpu_unknown`, `ram_
 Greetings, fillers and digest lines can be recorded once so they play instantly, with no GPU at call time:
 
 ```powershell
-npm run voice -- clips --out data\voice-clips       # several minutes on a free GPU; resumes where it stopped
+npm run voice -- clips --out data\voice-clips       # a few minutes on a free GPU; resumes where it stopped
 ```
+
+It needs the GPU memory for its own copy of the voice, so stop the gateway's voice first if it is running
+(`POST /v1/voice/tts/stop`, same headers as above); otherwise it refuses with "only N MB of GPU memory is free".
 
 Then set `HELIX_TTS_CLIPS_DIR=<that folder>` and restart. Re-run it after editing `src/persona/lines.ts`.
 

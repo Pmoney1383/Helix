@@ -40,7 +40,7 @@ on `/mcp` works too. Tokens expire (default 30 days) and are stored hashed. Trea
 ## Reaching the PC from the internet (Tailscale Funnel)
 
 Hosted chats cannot join your tailnet, so `/mcp` is published with Funnel. Use **port 443**: ChatGPT's connector
-setup did not reach the PC at all on 8443 (zero requests in the log), and many hosted fetchers only call 443.
+setup was not seen to reach the PC on 8443 at all, and many hosted fetchers only call 443.
 Funnel works per port, so turning it on for 443 makes everything on that port public, including the private
 Serve `/` that the iPhone uses. That is safe only because the gateway answers 404 to anything from the internet
 other than the three paths below (tested, see the safeguards). If you ever must undo it: `tailscale funnel --https=443 off`.
@@ -91,7 +91,7 @@ The static URL/bearer tokens above still work for tools that do not need OAuth. 
 
 ## Connecting the apps
 
-- **ChatGPT**: Settings, Developer mode, add an MCP connector, paste `.../mcp`, choose OAuth. Custom MCP connectors depend on the ChatGPT plan; ChatGPT itself said Plus may not include them (not verified).
+- **ChatGPT**: Settings, Developer mode, add an MCP connector, paste `.../mcp`, choose OAuth. Custom MCP connectors depend on your ChatGPT plan; check that yours includes developer mode.
 - **Claude (claude.ai)**: Settings, Connectors, Add custom connector, paste `.../mcp`, then sign in.
 
 You don't need the phone app for any of this. A future app screen could approve connectors from the phone instead of

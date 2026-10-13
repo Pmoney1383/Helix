@@ -18,9 +18,7 @@ npm run desktop -- disable <client-or-token-id>
 
 Use the OAuth **client ID** for a ChatGPT/Claude connector: that grant survives access-token refresh. Use a credential ID for
 a local agent or static hosted token. No grant is enabled by installation, migration, or normal connector consent.
-Previously issued OAuth access tokens from before this feature have no client association: reconnect/refresh to get a new
-access token after deploying, or enable the old credential individually until it expires. Refresh the client's MCP tool list
-after changing the grant. New tools may require reconnecting the connector in the chat UI.
+Refresh the client's MCP tool list after changing the grant. New tools may require reconnecting the connector in the chat UI.
 
 **ChatGPT action catalog:** Refreshing the browser does not necessarily refresh an installed app's tool schema. For a
 published workspace app, open Workspace settings → Apps → Helix → Action control → Refresh, then enable the newly found

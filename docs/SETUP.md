@@ -86,7 +86,8 @@ npm run helix -- connect
 npm run helix -- status
 ```
 
-This makes every *new* Claude Code and Codex session on the PC aware of Helix:
+`connect` lists its changes and asks before applying them (`--yes` skips the question). It makes every *new* Claude
+Code and Codex session on the PC aware of Helix:
 
 - a user-level `helix` MCP server (`watch_job`, `notify_user`, `request_user_approval`, ...) with a narrow scope;
 - a short instruction block in `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`;
@@ -107,7 +108,8 @@ Build and install the iPhone app as described in [ios/README.md](../ios/README.m
 
 The app gets its own revocable token. `GET /v1/devices` lists paired devices, and `DELETE /v1/devices/:id` revokes a lost phone.
 
-No phone yet? You can drive the gateway from a terminal: `npm run client -- pair <CODE>`, then
+No phone yet? You can drive the gateway from a terminal: `npm run client -- pair <CODE>` (it uses `HELIX_PORT` from
+`.env`; `--url` points it elsewhere), then
 `npm run client -- new "test" --project C:\path\to\repo` and `npm run client -- chat <sessionId> "hello"`.
 
 ## 7. Optional pieces

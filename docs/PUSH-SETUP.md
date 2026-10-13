@@ -49,8 +49,8 @@ One key works for normal alerts and VoIP calls, in both sandbox and production. 
 
 ## 4. Give it to the gateway
 
-Put the key **outside any git repository**, for example `C:\keys\AuthKey_ABCDE12345.p8`. The preflight check refuses a
-key that lives inside a repo. Optionally restrict it to your account:
+Put the key **outside any git repository**, for example `C:\keys\AuthKey_ABCDE12345.p8`. The preflight check warns about
+a key that lives inside a repo. Optionally restrict it to your account:
 
 ```powershell
 icacls C:\keys\AuthKey_ABCDE12345.p8 /inheritance:r /grant:r "$($env:USERNAME):R"

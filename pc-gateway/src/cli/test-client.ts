@@ -1,6 +1,6 @@
-// Minimal terminal client standing in for the phone (Phase 1 success criterion).
+// Minimal terminal client standing in for the phone.
 //
-//   npm run client -- pair <CODE> [--url http://127.0.0.1:7777]
+//   npm run client -- pair <CODE> [--url http://127.0.0.1:<HELIX_PORT from .env, default 7777>]
 //   npm run client -- sessions
 //   npm run client -- new "title" [--project C:\path]
 //   npm run client -- chat <sessionId> "message"
@@ -8,6 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import WebSocket from "ws";
+import { loadDotEnv } from "../config.js";
 
 const stateFile = path.resolve("data", "client.json");
 interface State { url: string; token: string }
@@ -78,7 +79,8 @@ try {
   if (cmd === "pair") {
     const [code] = rest;
     if (!code) throw new Error("usage: pair <CODE> [--url ...]");
-    const url = urlFlag ?? "http://127.0.0.1:7777";
+    loadDotEnv();
+    const url = urlFlag ?? `http://127.0.0.1:${process.env.HELIX_PORT || 7777}`;
     const res = await fetch(`${url}/v1/pair/complete`, {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ code, deviceName: "test-client", platform: "terminal" }),
