@@ -47,10 +47,10 @@ type Result = { content: { type: "text"; text: string }[]; isError?: boolean };
 const ok = (data: unknown): Result => ({ content: [{ type: "text", text: typeof data === "string" ? data : JSON.stringify(data, null, 2) }] });
 const fail = (message: string): Result => ({ content: [{ type: "text", text: message }], isError: true });
 
-/** Builds one MCP server exposing only the tools this context's scope allows. */
 /** A hosted chat may push the phone, but not spam it: at most this many pushes per connector per 10 minutes. */
 const hostedNotifyLimit = new RateLimiter(10, 10 * 60_000);
 
+/** Builds one MCP server exposing only the tools this context's scope allows. */
 export function createMcpServer(ctx: McpContext, deps: McpDeps): McpServer {
   const server = new McpServer({ name: "helix", version: "0.1.0" });
   registerComputerTools(server, ctx, deps);
