@@ -25,18 +25,45 @@ const clientMessage = z.discriminatedUnion("type", [
  */
 export function registerWebSocket(app: FastifyInstance, auth: AuthService, manager: SessionManager, router?: RouterService, persona?: PersonaService, live?: LiveDevices): void {
   app.get("/v1/ws", { websocket: true, preValidation: requireDevice(auth) }, (socket, req) => {
-    const device = req.device;
+    const device = req.device!;
+    let ended = false;
+    let unsubscribeBus = () => {};
+    let disconnect = () => {};
+    let unsubscribeAuth = () => {};
+    let closeTimer: NodeJS.Timeout | undefined;
+    const unsubscribe = () => {
+      if (ended) return;
+      ended = true;
+      unsubscribeBus(); disconnect(); unsubscribeAuth();
+    };
+    const invalidate = () => {
+      unsubscribe();
+      socket.close(1008, "Device authorization changed; reconnect.");
+      closeTimer ??= setTimeout(() => socket.terminate(), 1000);
+      closeTimer.unref();
+    };
+    const authorized = () => {
+      if (ended) return false;
+      try { if (auth.isCurrentDevice(device)) return true; } catch { /* database unavailable: fail closed */ }
+      invalidate();
+      return false;
+    };
     const send = (obj: unknown) => {
-      if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(obj));
+      if (authorized() && socket.readyState === socket.OPEN) socket.send(JSON.stringify(obj));
     };
 
-    send({ type: "hello", deviceId: device?.id });
-    const unsubscribeBus = manager.bus.subscribe((event) => send(event));
+    socket.on("close", () => { if (closeTimer) clearTimeout(closeTimer); unsubscribe(); });
+    socket.on("error", unsubscribe);
+    unsubscribeAuth = auth.onDeviceChanged((id) => { if (id === device.id) invalidate(); });
+    // Trust may have changed between upgrade validation and installing this connection's listeners.
+    if (!authorized()) return;
+    send({ type: "hello", deviceId: device.id });
+    unsubscribeBus = manager.bus.subscribe((event) => send(event));
     // While this socket is open the phone can be notified and rung through it (Android has no Apple push).
-    const disconnect = device ? live?.connect(device.id, device.platform) : undefined;
-    const unsubscribe = () => { unsubscribeBus(); disconnect?.(); };
+    disconnect = live?.connect(device.id, device.platform) ?? (() => {});
 
     socket.on("message", (raw) => {
+      if (!authorized()) return;
       let parsed: z.infer<typeof clientMessage>;
       try {
         parsed = clientMessage.parse(JSON.parse(raw.toString()));
@@ -67,8 +94,5 @@ export function registerWebSocket(app: FastifyInstance, auth: AuthService, manag
         send({ type: "error", status, error: err instanceof Error ? err.message : "error", ...(err instanceof GatewayError ? err.details : {}), clientId: "clientId" in parsed ? parsed.clientId : undefined });
       }
     });
-
-    socket.on("close", unsubscribe);
-    socket.on("error", unsubscribe);
   });
 }

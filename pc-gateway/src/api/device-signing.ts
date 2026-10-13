@@ -12,6 +12,7 @@
 // Signing string: these seven lines joined by "\n" (no trailing newline):
 //   HELIX-SIGN-V1 / METHOD (upper case) / URL as sent (path and query) / timestamp / nonce / body sha256 / device id
 import { createHash, createPublicKey, verify as cryptoVerify } from "node:crypto";
+import type { Db } from "../storage/sqlite.js";
 
 export const SIGN_VERSION = "HELIX-SIGN-V1";
 export const ENROLL_PREFIX = "helix-enroll-v1\n";
@@ -49,31 +50,58 @@ export function verifySignature(publicKeyB64: string, message: string, signature
   }
 }
 
-/** Remembers recent nonces so a captured signed request cannot be replayed. Memory only: it is short-lived by design. */
-export class NonceCache {
+const NONCE_TTL_MS = 2 * SKEW_MS + 60_000;
+
+export interface NonceStore {
+  /** false means replay; "full" means no new request can safely be admitted. */
+  use(deviceId: string, nonce: string, now?: number): boolean | "full";
+}
+
+/** Bounded memory store for isolated consumers. Never discard live replay markers to admit traffic. */
+export class NonceCache implements NonceStore {
   private readonly seen = new Map<string, number>();
-  constructor(private readonly ttlMs = 2 * SKEW_MS + 60_000, private readonly max = 20_000) {}
+  constructor(private readonly ttlMs = NONCE_TTL_MS, private readonly max = 20_000) {}
 
   /** True the first time a nonce is used by a device, false if it was already seen. */
-  use(deviceId: string, nonce: string, now = Date.now()): boolean {
+  use(deviceId: string, nonce: string, now = Date.now()): boolean | "full" {
     this.prune(now);
     const k = `${deviceId}:${nonce}`;
     if (this.seen.has(k)) return false;
+    if (this.seen.size >= this.max) return "full";
     this.seen.set(k, now + this.ttlMs);
     return true;
   }
 
   private prune(now: number): void {
-    if (this.seen.size < this.max) {
-      for (const [k, exp] of this.seen) { if (exp > now) break; this.seen.delete(k); } // oldest first: insertion order
-      return;
-    }
     for (const [k, exp] of this.seen) if (exp <= now) this.seen.delete(k);
-    while (this.seen.size >= this.max) this.seen.delete(this.seen.keys().next().value as string);
   }
 }
 
-export type SignatureFailure = "signature_required" | "bad_timestamp" | "bad_nonce" | "replayed" | "body_mismatch" | "bad_signature";
+/** Gateway replay state survives restart and is shared by all connections to its database. */
+export class PersistentNonceStore implements NonceStore {
+  private readonly consume: (deviceId: string, nonce: string, now: number) => boolean | "full";
+
+  constructor(db: Db, ttlMs = NONCE_TTL_MS, max = 20_000) {
+    const prune = db.prepare("DELETE FROM device_request_nonces WHERE expires_at_ms <= ?");
+    const exists = db.prepare("SELECT 1 FROM device_request_nonces WHERE device_id = ? AND nonce = ?");
+    const count = db.prepare("SELECT COUNT(*) AS n FROM device_request_nonces");
+    const insert = db.prepare("INSERT INTO device_request_nonces (device_id, nonce, expires_at_ms) VALUES (?, ?, ?)");
+    // Acquire the write lock before checking uniqueness/capacity. Commit the marker before dispatching a request.
+    this.consume = db.transaction((deviceId: string, nonce: string, now: number): boolean | "full" => {
+      prune.run(now);
+      if (exists.get(deviceId, nonce)) return false;
+      if ((count.get() as { n: number }).n >= max) return "full";
+      insert.run(deviceId, nonce, now + ttlMs);
+      return true;
+    }).immediate;
+  }
+
+  use(deviceId: string, nonce: string, now = Date.now()): boolean | "full" {
+    return this.consume(deviceId, nonce, now);
+  }
+}
+
+export type SignatureFailure = "signature_required" | "bad_timestamp" | "bad_nonce" | "replayed" | "nonce_capacity" | "body_mismatch" | "bad_signature";
 
 export interface SignedRequest {
   method: string;
@@ -87,7 +115,7 @@ export interface SignedRequest {
 const one = (v: string | string[] | undefined): string | undefined => (Array.isArray(v) ? v[0] : v);
 
 /** Check the four headers against a device's public key. Returns undefined when the request is properly signed. */
-export function checkSignature(req: SignedRequest, publicKeyB64: string, nonces: NonceCache, now = Date.now(), skewMs = SKEW_MS): SignatureFailure | undefined {
+export function checkSignature(req: SignedRequest, publicKeyB64: string, nonces: NonceStore, now = Date.now(), skewMs = SKEW_MS): SignatureFailure | undefined {
   const timestamp = one(req.headers["x-helix-timestamp"]);
   const nonce = one(req.headers["x-helix-nonce"]);
   const bodySha256 = one(req.headers["x-helix-body-sha256"])?.toLowerCase();
@@ -100,6 +128,8 @@ export function checkSignature(req: SignedRequest, publicKeyB64: string, nonces:
   const message = signingString({ method: req.method, url: req.url, timestamp, nonce, bodySha256, deviceId: req.deviceId });
   if (!verifySignature(publicKeyB64, message, signature)) return "bad_signature";
   // Only a request that is otherwise valid may use up a nonce, so junk cannot fill the cache.
-  if (!nonces.use(req.deviceId, nonce, now)) return "replayed";
+  const used = nonces.use(req.deviceId, nonce, now);
+  if (used === "full") return "nonce_capacity";
+  if (!used) return "replayed";
   return undefined;
 }

@@ -362,4 +362,17 @@ export const migrations: { version: number; sql: string }[] = [
       ALTER TABLE devices ADD COLUMN key_enrolled_at TEXT;
     `,
   },
+  {
+    version: 15,
+    sql: `
+      -- Persist consumed signing nonces across crashes/restarts; never evict an unexpired marker.
+      CREATE TABLE device_request_nonces (
+        device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+        nonce TEXT NOT NULL,
+        expires_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (device_id, nonce)
+      );
+      CREATE INDEX idx_device_request_nonces_expiry ON device_request_nonces(expires_at_ms);
+    `,
+  },
 ];

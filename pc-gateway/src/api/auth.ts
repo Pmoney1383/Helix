@@ -4,7 +4,7 @@ import { Readable } from "node:stream";
 import type { FastifyInstance } from "fastify";
 import type { Db } from "../storage/sqlite.js";
 import {
-  EMPTY_BODY_SHA256, NonceCache, type SignatureFailure, checkSignature, enrollmentMessage, isP256PublicKey, sha256Hex, verifySignature,
+  EMPTY_BODY_SHA256, PersistentNonceStore, type SignatureFailure, checkSignature, enrollmentMessage, isP256PublicKey, sha256Hex, verifySignature,
 } from "./device-signing.js";
 
 const PAIRING_TTL_MS = 5 * 60 * 1000;
@@ -35,11 +35,32 @@ export interface AuthOptions {
   requireSigning?: boolean;
 }
 
-export type KeyEnrollResult = "ok" | "already_enrolled" | "bad_key" | "bad_proof" | "no_such_device";
+export type KeyEnrollResult = "ok" | "already_enrolled" | "bad_key" | "bad_proof" | "no_such_device" | "pairing_required" | "invalid_pairing_code";
 
 export class AuthService {
-  private readonly nonces = new NonceCache();
-  constructor(private readonly db: Db, private readonly opts: AuthOptions = {}) {}
+  private readonly nonces: PersistentNonceStore;
+  private readonly deviceChanged = new Set<(deviceId: string) => void>();
+  constructor(private readonly db: Db, private readonly opts: AuthOptions = {}) {
+    this.nonces = new PersistentNonceStore(db);
+  }
+
+  /** Live connections must stop immediately when their credential's trust changes. */
+  onDeviceChanged(listener: (deviceId: string) => void): () => void {
+    this.deviceChanged.add(listener);
+    return () => { this.deviceChanged.delete(listener); };
+  }
+
+  private invalidateDevice(deviceId: string): void {
+    for (const listener of this.deviceChanged) {
+      try { listener(deviceId); } catch { /* one broken connection must not prevent others being invalidated */ }
+    }
+  }
+
+  /** Revalidate a connection's authenticated snapshot, without reusing its handshake nonce. */
+  isCurrentDevice(device: Device): boolean {
+    const row = this.db.prepare("SELECT public_key FROM devices WHERE id = ? AND revoked_at IS NULL").get(device.id) as { public_key: string | null } | undefined;
+    return !!row && (row.public_key ?? undefined) === device.publicKey && (!this.requireSigning || !!row.public_key);
+  }
 
   get requireSigning(): boolean {
     return !!this.opts.requireSigning;
@@ -51,16 +72,25 @@ export class AuthService {
     return verifySignature(publicKey, enrollmentMessage(publicKey), proof) ? "ok" : "bad_proof";
   }
 
-  /** Enroll a device's signing key. Once only: a stolen token must not be able to swap the key (re-pair to change it). */
-  enrollKey(deviceId: string, publicKey: string, proof: string): KeyEnrollResult {
-    const row = this.db.prepare("SELECT public_key FROM devices WHERE id = ? AND revoked_at IS NULL").get(deviceId) as { public_key: string | null } | undefined;
-    if (!row) return "no_such_device";
-    if (row.public_key) return "already_enrolled";
+  /** Legacy migration needs independent local authorization, just like pairing a new device. */
+  enrollKey(deviceId: string, publicKey: string, proof: string, pairingCode?: string): KeyEnrollResult {
     const checked = this.checkNewKey(publicKey, proof);
     if (checked !== "ok") return checked;
-    this.db.prepare("UPDATE devices SET public_key = ?, key_enrolled_at = ? WHERE id = ? AND public_key IS NULL").run(publicKey, new Date().toISOString(), deviceId);
-    this.audit(deviceId, "device.key_enrolled");
-    return "ok";
+    const result = this.db.transaction((): KeyEnrollResult => {
+      const row = this.db.prepare("SELECT public_key FROM devices WHERE id = ? AND revoked_at IS NULL").get(deviceId) as { public_key: string | null } | undefined;
+      if (!row) return "no_such_device";
+      if (row.public_key) return "already_enrolled";
+      if (!pairingCode) return "pairing_required";
+      const now = new Date().toISOString();
+      const claimed = this.db.prepare("UPDATE pairing_codes SET used_at = ? WHERE code_hash = ? AND used_at IS NULL AND expires_at > ?")
+        .run(now, sha256(pairingCode.trim().toUpperCase()), now);
+      if (claimed.changes !== 1) return "invalid_pairing_code";
+      this.db.prepare("UPDATE devices SET public_key = ?, key_enrolled_at = ? WHERE id = ? AND public_key IS NULL AND revoked_at IS NULL").run(publicKey, now, deviceId);
+      this.audit(deviceId, "device.key_enrolled");
+      return "ok";
+    }).immediate();
+    if (result === "ok") this.invalidateDevice(deviceId);
+    return result;
   }
 
   keyStatus(deviceId: string): { enrolled: boolean; enrolledAt?: string; required: boolean } {
@@ -121,8 +151,10 @@ export class AuthService {
   }
 
   revoke(deviceId: string): boolean {
-    return this.db.prepare("UPDATE devices SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL")
+    const revoked = this.db.prepare("UPDATE devices SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL")
       .run(new Date().toISOString(), deviceId).changes === 1;
+    if (revoked) this.invalidateDevice(deviceId);
+    return revoked;
   }
 
   audit(deviceId: string | undefined, action: string, detail?: unknown): void {
@@ -146,7 +178,8 @@ export function requireDevice(auth: AuthService, opts: { allowUnenrolled?: boole
     }
     const failure = auth.verifyRequest(device, { method: req.method, url: req.raw.url ?? req.url, rawBodySha256: req.rawBodySha256, headers: req.headers }, opts.allowUnenrolled);
     if (failure) {
-      await reply.code(401).send({ error: failure });
+      if (failure === "nonce_capacity") reply.header("retry-after", "60");
+      await reply.code(failure === "nonce_capacity" ? 429 : 401).send({ error: failure });
       return;
     }
     req.device = device;

@@ -26,9 +26,12 @@ as well as the iPhone's raw form. Enrollment, the signed headers, the Settings r
   `helix-enroll-v1\n<public key>`), with the pairing code. The gateway checks the proof before it uses up the code.
   If pairing fails (for example a wrong code), the app puts its previous key back so an existing pairing keeps working.
 - **A phone that paired before signing existed.** At launch and after pairing, once `/health` answers, the app asks
-  `GET /v1/devices/me/key`. If no key is enrolled, it sends `PUT /v1/devices/me/key` (bearer token only, since there is
-  nothing to check a signature against yet). This happens before the WebSocket connects. An update to the app is
-  enough; you do not need to pair again.
+  `GET /v1/devices/me/key`. If no key is enrolled, it must prove the owner is at the PC before a key is accepted: a
+  bearer token alone could have been copied, and whoever enrolls first owns the device from then on. Send
+  `PUT /v1/devices/me/key {publicKey, keyProof, pairingCode}` with a fresh one-time code from `npm run pair`.
+  Without a code the gateway answers `403 pairing_required`; an expired, used or wrong code gets
+  `401 invalid_pairing_code`; a bad key or proof gets `400` and does not use up the code. The simplest path is to
+  pair again (**Settings > Pair Again…**), which enrolls the key as part of pairing.
 - **Once only.** A device's key can be enrolled one time. A second enrollment gets `409 already_enrolled`, so a stolen
   token cannot swap in an attacker's key. To change the key, pair again.
 
@@ -51,6 +54,14 @@ The gateway refuses a request (`401` with the reason) when the headers are missi
 120 seconds off the gateway's clock, the nonce is malformed or was already used by that device, the body hash does
 not match the received bytes, or the signature does not verify. Rejections are written to the audit log.
 
+Used nonces are stored in the gateway's database for five minutes, so a restart does not make old requests
+replayable. If that store is ever full, new signed requests get `429 nonce_capacity` with `Retry-After: 60`
+instead of the gateway forgetting nonces that are still valid. Back off, then sign a fresh request.
+
+Revoking a device (`DELETE /v1/devices/:id`) or enrolling its key closes that device's open WebSockets at once
+(close code `1008`), and every socket rechecks its device before each command and event. On `1008`, check the
+pairing and signing status before reconnecting.
+
 ## `HELIX_REQUIRE_DEVICE_SIGNING`
 
 A device that has a key enrolled must **always** sign, whatever this setting says. The setting only decides what
@@ -58,7 +69,7 @@ happens to devices without a key:
 
 | | `false` (default) | `true` |
 |---|---|---|
-| Paired device with no key | Allowed, unsigned | Refused (`401 key_required`), except the two `/v1/devices/me/key` calls it needs to enroll |
+| Paired device with no key | Allowed, unsigned | Refused (`401 key_required`), except the two `/v1/devices/me/key` calls it needs to enroll (enrolling also needs a fresh `pairingCode`) |
 | Pairing without a public key | Allowed | Refused (`400 key_required`) |
 
 Turn it on only after every phone you use shows signing as **On**. Clients that do not sign, such as the
@@ -82,7 +93,5 @@ creates a new device record with the new key. The old record stays until you rev
 - Signing protects against a copied token. It does not protect against code running on the unlocked phone itself,
   which can ask the Secure Enclave to sign.
 - The software fallback key is only as safe as the Keychain.
-- The nonce cache is in memory, so it is empty after the gateway restarts. A captured request could then be replayed
-  until its timestamp is more than 120 seconds old.
 - Signing is off by default. The phone has to run an app version with signing, and you have to turn on
   `HELIX_REQUIRE_DEVICE_SIGNING`, before devices without a key are shut out.

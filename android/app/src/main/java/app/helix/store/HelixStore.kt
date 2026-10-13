@@ -305,6 +305,8 @@ class HelixStore(private val context: Context, private val notifier: Notifier) {
         } catch (e: ClientError.Http) {
             signingProblem = when {
                 e.status == 409 -> "This phone's signing key doesn't match the one the gateway has. Pair again."
+                e.status == 403 && e.serverMessage == "pairing_required" ->
+                    "Turning on request signing for this phone needs a code from the PC. Pair again to enroll its key."
                 e.status == 401 && (e.serverMessage == "signature_required" || e.serverMessage == "bad_signature") ->
                     "The gateway wants signed requests and this phone has no matching key. Pair again."
                 else -> signingProblem

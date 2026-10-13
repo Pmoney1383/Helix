@@ -93,7 +93,8 @@ describe("device-key signing: enrolling", () => {
       assert.equal((await r.call(p.json.token, p.json.deviceId, undefined, "PUT", "/v1/devices/me/key", { publicKey: k.publicB64, keyProof: proofFor(other) })).json.error, "bad_proof", "proof from a different key");
       assert.equal((await r.call(p.json.token, p.json.deviceId, undefined, "PUT", "/v1/devices/me/key", { publicKey: "A".repeat(120), keyProof: proofFor(k) })).json.error, "bad_key");
 
-      assert.equal((await r.call(p.json.token, p.json.deviceId, undefined, "PUT", "/v1/devices/me/key", { publicKey: k.publicB64, keyProof: proofFor(k) })).status, 200);
+      const { code: pairingCode } = r.gw.auth.createPairingCode();
+      assert.equal((await r.call(p.json.token, p.json.deviceId, undefined, "PUT", "/v1/devices/me/key", { publicKey: k.publicB64, keyProof: proofFor(k), pairingCode })).status, 200);
       const again = await r.call(p.json.token, p.json.deviceId, k, "PUT", "/v1/devices/me/key", { publicKey: other.publicB64, keyProof: proofFor(other) });
       assert.equal(again.status, 409, "a key cannot be swapped by whoever holds the token");
       const st = await r.call(p.json.token, p.json.deviceId, k, "GET", "/v1/devices/me/key");
@@ -187,13 +188,15 @@ describe("device-key signing: enforcement once a key is enrolled", () => {
       const p = await strict.r.pairDevice();
       assert.equal(p.status, 400);
       assert.equal(p.json.error, "key_required", "new devices must bring a key");
-      // An old device with no key is refused everywhere except enrolling.
+      // Legacy status/enrollment remain reachable, but enrollment needs fresh local authorization.
       const { code } = strict.r.gw.auth.createPairingCode();
       const legacy = strict.r.gw.auth.completePairing(code, "old phone")!;
       assert.equal((await strict.r.call(legacy.token, legacy.deviceId, undefined, "GET", "/v1/sessions")).json.error, "key_required");
       assert.equal((await strict.r.call(legacy.token, legacy.deviceId, undefined, "GET", "/v1/devices/me/key")).status, 200);
       const k2 = newKey();
-      assert.equal((await strict.r.call(legacy.token, legacy.deviceId, undefined, "PUT", "/v1/devices/me/key", { publicKey: k2.publicB64, keyProof: proofFor(k2) })).status, 200);
+      assert.equal((await strict.r.call(legacy.token, legacy.deviceId, undefined, "PUT", "/v1/devices/me/key", { publicKey: k2.publicB64, keyProof: proofFor(k2) })).json.error, "pairing_required");
+      const { code: pairingCode } = strict.r.gw.auth.createPairingCode();
+      assert.equal((await strict.r.call(legacy.token, legacy.deviceId, undefined, "PUT", "/v1/devices/me/key", { publicKey: k2.publicB64, keyProof: proofFor(k2), pairingCode })).status, 200);
       assert.equal((await strict.r.call(legacy.token, legacy.deviceId, k2, "GET", "/v1/sessions")).status, 200);
     } finally { await strict.r.close(); }
   });

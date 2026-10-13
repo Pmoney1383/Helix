@@ -37,7 +37,10 @@ const pairBody = z.object({
   keyProof: z.string().min(40).max(200).optional(),
 });
 
-const keyBody = z.object({ publicKey: z.string().min(80).max(200), keyProof: z.string().min(40).max(200) });
+const keyBody = z.object({
+  publicKey: z.string().min(80).max(200), keyProof: z.string().min(40).max(200),
+  pairingCode: z.string().min(4).max(32).optional(),
+});
 
 const createSessionBody = z.object({
   provider: z.enum(["claude", "codex"]).default("claude"),
@@ -92,6 +95,7 @@ export function registerHttp(
   comms?: { devices: DeviceTokens; calls: CallManager; push?: Notifier; apns?: ApnsClient; live?: LiveDevices; persona: PersonaService; tts?: TtsManager; clips?: ClipLibrary; callAudio?: CallAudio }
 ): void {
   const pairLimiter = new RateLimiter(5, 60_000);
+  const enrollLimiter = new RateLimiter(5, 60_000);
   registerBodyHashing(app);
   const guard = { preHandler: requireDevice(auth) };
   const guardEnroll = { preHandler: requireDevice(auth, { allowUnenrolled: true }) };
@@ -126,10 +130,12 @@ export function registerHttp(
   // Device-key signing: enroll the public key of the key the phone keeps in its Secure Enclave. Once only; see api/device-signing.ts.
   app.get("/v1/devices/me/key", guardEnroll, async (req) => auth.keyStatus(req.device!.id));
   app.put("/v1/devices/me/key", guardEnroll, async (req, reply) => {
+    if (!enrollLimiter.allow(req.ip)) return reply.code(429).send({ error: "too many attempts" });
     const body = keyBody.parse(req.body);
-    const result = auth.enrollKey(req.device!.id, body.publicKey, body.keyProof);
+    const result = auth.enrollKey(req.device!.id, body.publicKey, body.keyProof, body.pairingCode);
     if (result === "ok") return { enrolled: true };
-    return reply.code(result === "already_enrolled" ? 409 : 400).send({ error: result });
+    const status = result === "already_enrolled" ? 409 : result === "pairing_required" ? 403 : result === "invalid_pairing_code" ? 401 : 400;
+    return reply.code(status).send({ error: result });
   });
 
   app.get("/v1/sessions", guard, async () => ({ sessions: manager.registry.list() }));
