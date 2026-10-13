@@ -1,0 +1,80 @@
+# Secrets (APNs keys, tokens, device keys)
+.env
+.env.*
+!.env.example
+*.p8
+*.p12
+*.pem
+*.key
+*.mobileprovision
+*.cer
+secrets/
+
+# Node / TypeScript (pc-gateway)
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+coverage/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# Local state / logs (SQLite, audit logs)
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+data/
+logs/
+*.log
+
+# Windows service artifacts
+pc-gateway/service/*.exe
+pc-gateway/service/*.download
+pc-gateway/service/helix-gateway.xml
+pc-gateway/service/*.wrapper.log
+pc-gateway/service/*.out.log
+pc-gateway/service/*.err.log
+
+# Xcode / Swift (ios app)
+xcuserdata/
+*.xcuserstate
+DerivedData/
+.build/
+.swiftpm/
+Pods/
+*.xcarchive
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Python / local TTS experiments (Kokoro etc.)
+__pycache__/
+*.pyc
+.venv/
+venv/
+models/
+*.onnx
+*.pt
+*.safetensors
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Local TTS voice clips and reference audio (never commit a voice)
+clips/
+*.wav
+
+# Per-developer iOS signing (ios/Config/Helix.local.xcconfig.example)
+ios/Config/Helix.local.xcconfig

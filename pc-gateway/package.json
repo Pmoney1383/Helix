@@ -1,0 +1,41 @@
+{
+  "name": "helix-pc-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "desktop": "tsx src/cli/desktop.ts",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/src/index.js",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test --test-timeout=120000 test/*.test.ts",
+    "pair": "tsx src/cli/pair.ts",
+    "client": "tsx src/cli/test-client.ts",
+    "sessions": "tsx src/cli/sessions.ts",
+    "helix": "tsx src/cli/helix.ts",
+    "hosted": "tsx src/cli/hosted.ts",
+    "push": "tsx src/cli/push.ts",
+    "voice": "tsx src/cli/voice.ts",
+    "proctree": "tsx src/cli/proctree.ts"
+  },
+  "dependencies": {
+    "@fastify/websocket": "^11.3.1",
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "better-sqlite3": "^13.0.3",
+    "fastify": "^5.12.5",
+    "werift": "0.25.0",
+    "ws": "^8.22.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.6.3",
+    "@types/ws": "^8.18.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

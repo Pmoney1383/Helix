@@ -1,0 +1,6 @@
+{
+  "name": "usage-guard",
+  "version": "0.1.0",
+  "description": "Shows context size and the 5-hour usage left above the prompt, and warns before a session gets expensive",
+  "author": { "name": "Helix" }
+}

@@ -1,0 +1,30 @@
+<!--
+  WinSW service definition template. install.ps1 fills in the paths and writes helix-gateway.xml next to
+  helix-gateway.exe (WinSW v2 needs both with the same base name). Do not edit the generated file; rerun install.ps1.
+  The service must run as YOUR Windows user so `claude` finds your login and ~/.claude sessions;
+  the installer prompts for that account. Config comes from ..\.env.
+-->
+<service>
+  <id>helix-gateway</id>
+  <name>Helix Gateway</name>
+  <description>Always-on gateway between the Helix phone app and Claude Code / Codex.</description>
+
+  <executable>{{NODE}}</executable>
+  <arguments>dist\src\index.js</arguments>
+  <workingdirectory>{{GATEWAY}}</workingdirectory>
+
+  <startmode>Automatic</startmode>
+  <delayedAutoStart>true</delayedAutoStart>
+  <onfailure action="restart" delay="5 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <resetfailure>1 hour</resetfailure>
+
+  <log mode="roll-by-size">
+    <sizeThreshold>5120</sizeThreshold>
+    <keepFiles>5</keepFiles>
+  </log>
+  <logpath>{{GATEWAY}}\data\logs</logpath>
+
+  <!-- Config comes from pc-gateway\.env (loaded at startup). -->
+  <env name="NODE_ENV" value="production"/>
+</service>

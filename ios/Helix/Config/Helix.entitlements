@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Push (normal alerts and PushKit VoIP). "development" = the APNs sandbox, which is what
+	     Xcode-run builds use; the distribution signing step swaps in "production" for TestFlight
+	     and the App Store. PushService sends the matching `environment` to the gateway. -->
+	<key>aps-environment</key>
+	<string>development</string>
+	<key>com.apple.developer.siri</key>
+	<true/>
+	<!-- Lets the gateway's critical alerts ("interruption-level": "time-sensitive") break through
+	     Focus. Without it iOS quietly downgrades them to ordinary notifications. -->
+	<key>com.apple.developer.usernotifications.time-sensitive</key>
+	<true/>
+</dict>
+</plist>

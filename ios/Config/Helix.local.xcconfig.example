@@ -1,0 +1,5 @@
+// Copy to Helix.local.xcconfig (gitignored) and fill in. See ios/README.md.
+DEVELOPMENT_TEAM = ABCDE12345
+HELIX_BUNDLE_ID = com.yourname.helix
+HELIX_GATEWAY_HOST = my-pc.my-tailnet.ts.net
+// HELIX_APP_ENTITLEMENTS = Helix/Config/Helix-CarPlay.entitlements

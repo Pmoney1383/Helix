@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Helix.entitlements plus CarPlay. Use it (HELIX_APP_ENTITLEMENTS in ios/Config/Helix.local.xcconfig)
+	     only after Apple has granted your App ID the CarPlay voice-based conversation entitlement
+	     (docs/CARPLAY.md); without that grant Xcode refuses to sign the app. -->
+	<key>aps-environment</key>
+	<string>development</string>
+	<key>com.apple.developer.carplay-voice-based-conversation</key>
+	<true/>
+	<key>com.apple.developer.siri</key>
+	<true/>
+	<key>com.apple.developer.usernotifications.time-sensitive</key>
+	<true/>
+</dict>
+</plist>

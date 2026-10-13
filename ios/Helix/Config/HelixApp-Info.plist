@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Merged with Xcode's GENERATE_INFOPLIST_FILE output (INFOPLIST_FILE alongside
+	     GENERATE_INFOPLIST_FILE = YES merges both; the generated keys - scene manifest, launch
+	     screen, etc. - are untouched here). Only the keys calling needs that the project-editor-
+	     style INFOPLIST_KEY_* settings don't cover (array values). -->
+
+	<!-- Pre-fills the pairing sheet's address (GatewaySession). Set in ios/Config/Helix.local.xcconfig. -->
+	<key>HelixGatewayHost</key>
+	<string>$(HELIX_GATEWAY_HOST)</string>
+
+	<!-- VoiceLoop: mic capture + Apple Speech transcription during a call. -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Helix listens during calls.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Helix transcribes what you say during a call.</string>
+
+	<!-- Approving from a notification asks for Face ID (DeviceAuth). -->
+	<key>NSFaceIDUsageDescription</key>
+	<string>Helix confirms it is you before approving an agent's request.</string>
+
+	<!-- Siri: the Intents extension (HelixIntents) resolves "call Claude/Astra" and continues
+	     here. Do NOT add INIntentsSupported to the app - it belongs on the extension only. -->
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>INStartCallIntent</string>
+	</array>
+	<key>NSSiriUsageDescription</key>
+	<string>Helix lets you start calls with Siri.</string>
+
+	<!-- CarPlay scene (CarPlaySceneDelegate). The phone's own window scene stays SwiftUI's default. -->
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<true/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>CPTemplateApplicationSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneClassName</key>
+					<string>CPTemplateApplicationScene</string>
+					<key>UISceneConfigurationName</key>
+					<string>Helix-CarPlay</string>
+					<key>UISceneDelegateClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).CarPlaySceneDelegate</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
+
+	<!-- CallKit requires "voip" to recognize this as a calling app at all - without it,
+	     CXCallController.request fails with CXErrorCodeRequestTransactionError.unentitled
+	     (code 1), confirmed live. "audio" is also kept for the background audio session the
+	     provider keeps active once a call is reported. Both are present in the Phase 0 spike's
+	     Info.plist, which is what this was ported from. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>voip</string>
+		<string>audio</string>
+	</array>
+</dict>
+</plist>

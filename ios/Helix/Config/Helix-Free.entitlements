@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- For a free (personal) Apple team, which cannot use push, VoIP or Siri. Select it with
+	     HELIX_APP_ENTITLEMENTS = Helix/Config/Helix-Free.entitlements in ios/Config/Helix.local.xcconfig.
+	     Chat, approvals and in-app calls work; notifications, incoming calls and Siri do not. -->
+</dict>
+</plist>
