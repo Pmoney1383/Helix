@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { ApnsClient } from "../notifications/apns.js";
 import type { DeviceTokens } from "../notifications/devices.js";
-import type { Notifier } from "../notifications/escalation.js";
-import type { Notice } from "../notifications/escalation.js";
+import { ChannelUnavailable, type Notice, type Notifier } from "../notifications/escalation.js";
+import type { LiveDevices } from "../notifications/live-devices.js";
 import type { ApprovalService } from "../permissions/approvals.js";
 import type { RouterService } from "../router/router.js";
 import { GatewayError, type EventBus, type SessionManager } from "../sessions/manager.js";
@@ -71,6 +71,8 @@ export class CallManager {
     private readonly deps: {
       devices: DeviceTokens;
       apns?: ApnsClient;
+      /** Android phones connected right now: they are rung by the `call.ringing` event on their live connection. */
+      live?: LiveDevices;
       router: RouterService;
       manager: SessionManager;
       approvals: ApprovalService;
@@ -113,16 +115,17 @@ export class CallManager {
   }
 
   get available(): boolean {
-    return !!this.deps.apns;
+    return !!this.deps.apns || (this.deps.live?.count("android") ?? 0) > 0;
   }
 
   /* ---------------- incoming ---------------- */
 
   /** Ring the user's phone(s). Throws if nothing could be rung; the escalation policy records that as a failed channel. */
   async ringIncoming(ctx: RingContext): Promise<Call> {
-    if (!this.deps.apns) throw new Error("calls need Apple push notifications, which are not configured");
-    const tokens = this.deps.devices.tokensFor("voip");
-    if (tokens.length === 0) throw new Error("no phone has registered for calls");
+    const androidLive = this.deps.live?.count("android") ?? 0;
+    if (!this.deps.apns && androidLive === 0) throw new ChannelUnavailable("calls need Apple push or a connected Android phone");
+    const tokens = this.deps.apns ? this.deps.devices.tokensFor("voip") : [];
+    if (tokens.length === 0 && androidLive === 0) throw new ChannelUnavailable("no phone has registered for calls");
 
     const expects: Call["expects"] = ctx.approvalId ? "approval" : "conversation";
     const script = ctx.approvalId
@@ -138,7 +141,8 @@ export class CallManager {
       helix: { callId: id, expects, severity: ctx.severity, approvalId: ctx.approvalId, sessionId: ctx.sessionId },
       callId: id, caller: "Claude", title: ctx.title.slice(0, 80), expects,
     };
-    let rang = 0;
+    // An Android phone with the live connection open rings from the `call.ringing` event published below.
+    let rang = androidLive;
     const reasons: string[] = [];
     await Promise.all(tokens.map(async (t) => {
       const r = await this.deps.apns!.send({ token: t.token, environment: t.environment, kind: "voip", payload });

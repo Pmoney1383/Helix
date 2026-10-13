@@ -1,4 +1,19 @@
-# Push notifications and calls: the contract for the iPhone app
+# Push notifications and calls: the contract for the apps
+
+## Android: the same events over the live connection
+
+Android phones have no Apple push. While the Android app holds its WebSocket open (a foreground service), the gateway
+delivers to it over that connection instead, and counts a delivery only while such a phone is connected
+(`GET /v1/push/status` shows `androidConnected`):
+
+- **Notifications:** the push channel also publishes `{ "type": "device.notification", "notification": { title, body,
+  severity, kind, sessionId?, approvalId?, eventId? } }`. `kind` is `event`, `approval` or `missed_call`, as in the
+  `helix` block of an Apple push. The app shows it as a notification; approval notifications get Approve and Reject.
+- **Calls:** a ring is the ordinary `call.ringing` event. The app rings through Android's call system and then uses the
+  same endpoints as the iPhone: `POST /v1/calls/:id/answer`, `/decline`, `/decision`, `/end`.
+
+With Apple push configured too, both are used: a delivery counts if either reached a phone. Everything below describes
+the iPhone side.
 
 This is the contract between the gateway and the phone app for push, calls and spoken replies. Setting up your own Apple push key: [PUSH-SETUP.md](PUSH-SETUP.md). All endpoints need the device bearer token unless noted. Full endpoint list: `pc-gateway/README.md`.
 

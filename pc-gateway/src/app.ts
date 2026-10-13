@@ -27,6 +27,8 @@ import { ApnsClient, type ApnsConfig } from "./notifications/apns.js";
 import { ApprovalEscalator } from "./notifications/approval-escalator.js";
 import { DeviceTokens } from "./notifications/devices.js";
 import { PushNotifier } from "./notifications/push.js";
+import { LiveDevices } from "./notifications/live-devices.js";
+import { FanOutNotifier, LivePushNotifier } from "./notifications/live-push.js";
 import { SessionIndexer, type AgentHomes } from "./discovery/indexer.js";
 import { RouterService } from "./router/router.js";
 import { writeToPeer } from "./discovery/peer.js";
@@ -138,9 +140,12 @@ export async function buildGateway(
     try { apns = new ApnsClient(config.apns); }
     catch (err) { app.log.error({ err }, "APNs is configured but the key could not be used: push and calls are disabled"); }
   }
-  const push = apns ? new PushNotifier(apns, devices, app.log) : undefined;
-  const escalationChannels: ConstructorParameters<typeof Escalation>[1] = { message: new MessageNotifier(manager.messages, manager.bus) };
-  if (push) escalationChannels.push = push;
+  // An Android phone has no Apple push: while its app holds the live connection, pushes and rings travel over it.
+  const live = new LiveDevices();
+  const applePush = apns ? new PushNotifier(apns, devices, app.log) : undefined;
+  const livePush = new LivePushNotifier(manager.bus, live);
+  const push = new FanOutNotifier(applePush ? [applePush, livePush] : [livePush]);
+  const escalationChannels: ConstructorParameters<typeof Escalation>[1] = { message: new MessageNotifier(manager.messages, manager.bus), push };
   const escalation = new Escalation(db, escalationChannels, { presence, ...config.escalation });
   const activity = new SessionActivity(manager.bus, approvals);
   const watchers = new WatcherManager({
@@ -180,8 +185,8 @@ export async function buildGateway(
   const callAudio = new CallAudio(manager.bus, tts, app.log);
   const stopCallAudio = config.tts?.enabled ? callAudio.start() : () => undefined;
   app.addHook("onClose", async () => { stopWarmer(); stopTtsPipeline(); stopCallAudio(); await tts.stop("gateway closing"); });
-  const calls = new CallManager(db, manager.bus, { devices, apns, router, manager, approvals, push, persona }, { ringTimeoutMs: config.ringTimeoutMs });
-  if (apns) escalationChannels.call = new CallNotifier(calls); // same object the escalation already holds
+  const calls = new CallManager(db, manager.bus, { devices, apns, live, router, manager, approvals, push, persona }, { ringTimeoutMs: config.ringTimeoutMs });
+  escalationChannels.call = new CallNotifier(calls); // same object the escalation already holds; unavailable when no phone can ring
   // Ending a call: a clear goodbye from the user, or the agent (front door or handed session) calling end_call.
   router.inCall = (routeId) => !!calls.activeCallForRoute(routeId);
   router.hangUp = (sessionId) => { const c = calls.activeCallForSession(sessionId); return c ? calls.hangUpAfterReply(c.id) : false; };
@@ -206,8 +211,8 @@ export async function buildGateway(
   const approvalEscalator = new ApprovalEscalator(manager.bus, escalation, { callAfterMs: config.approvalCallAfterMs });
   app.addHook("onClose", async () => { approvalEscalator.stop(); calls.stop(); apns?.close(); });
   const agentEvents = new AgentEvents(db, activity, registry, indexer, { approvals, presence, escalation });
-  registerHttp(app, auth, manager, approvals, watchers, indexer, { localTokens, agentEvents, presence }, router, { devices, calls, push, apns, persona, tts, clips, callAudio });
-  registerWebSocket(app, auth, manager, router, persona);
+  registerHttp(app, auth, manager, approvals, watchers, indexer, { localTokens, agentEvents, presence }, router, { devices, calls, push, apns, live, persona, tts, clips, callAudio });
+  registerWebSocket(app, auth, manager, router, persona, live);
   const oauth = new OAuthService(db, localTokens);
   registerOAuth(app, oauth, config.publicUrl);
   registerMcp(app, (token) => agentTokens.lookup(token) ?? localTokens.lookup(token), {

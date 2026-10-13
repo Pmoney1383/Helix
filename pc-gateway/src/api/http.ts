@@ -16,7 +16,8 @@ import { PersonaPatchSchema, type PersonaService } from "../persona/service.js";
 import type { AgentEvents } from "../discovery/agent-events.js";
 import type { ApnsClient } from "../notifications/apns.js";
 import { type DeviceTokens, TOKEN_FORMAT } from "../notifications/devices.js";
-import type { PushNotifier } from "../notifications/push.js";
+import type { Notifier } from "../notifications/escalation.js";
+import type { LiveDevices } from "../notifications/live-devices.js";
 import type { RouterService } from "../router/router.js";
 import type { PresenceService } from "../notifications/presence.js";
 import type { LocalTokenService } from "../auth/local-tokens.js";
@@ -88,7 +89,7 @@ export function registerHttp(
   indexer?: SessionIndexer,
   local?: { localTokens: LocalTokenService; agentEvents: AgentEvents; presence: PresenceService },
   router?: RouterService,
-  comms?: { devices: DeviceTokens; calls: CallManager; push?: PushNotifier; apns?: ApnsClient; persona: PersonaService; tts?: TtsManager; clips?: ClipLibrary; callAudio?: CallAudio }
+  comms?: { devices: DeviceTokens; calls: CallManager; push?: Notifier; apns?: ApnsClient; live?: LiveDevices; persona: PersonaService; tts?: TtsManager; clips?: ClipLibrary; callAudio?: CallAudio }
 ): void {
   const pairLimiter = new RateLimiter(5, 60_000);
   registerBodyHashing(app);
@@ -312,7 +313,8 @@ export function registerHttp(
 
   /* ---- push tokens, devices, and phone calls ---- */
   if (comms) {
-    const { devices, calls, push, apns } = comms;
+    const { devices, calls, push, apns, live } = comms;
+    const androidLive = () => (live?.count("android") ?? 0) > 0;
 
     app.put("/v1/devices/me/push-token", guard, async (req) => {
       const b = z.object({
@@ -339,11 +341,12 @@ export function registerHttp(
     app.get("/v1/push/status", guard, async () => ({
       configured: !!apns, bundleId: apns?.bundleId,
       alertTokens: devices.tokensFor("alert").length, voipTokens: devices.tokensFor("voip").length, callsAvailable: calls.available,
+      androidConnected: live?.count("android") ?? 0,
     }));
     // For testing the phone side without waiting for a real event.
     app.post("/v1/push/test", guard, async (req, reply) => {
       const { kind } = z.object({ kind: z.enum(["alert", "voip"]) }).parse(req.body);
-      if (!apns) return reply.code(409).send({ error: "Apple push is not configured on the gateway (HELIX_APNS_*)" });
+      if (!apns && !androidLive()) return reply.code(409).send({ error: "Apple push is not configured on the gateway (HELIX_APNS_*) and no Android phone is connected" });
       try {
         if (kind === "alert") {
           await push!.deliver({ severity: "important", title: "Helix test", body: "If you can read this, push notifications work.", dedupeKey: "test", kind: "event" });
@@ -369,7 +372,7 @@ export function registerHttp(
         summary: z.string().max(500).default("This is a test. Nothing is wrong."),
         approval: z.boolean().default(false),
       }).parse(req.body ?? {});
-      if (!apns) return reply.code(409).send({ error: "Apple push is not configured on the gateway (HELIX_APNS_*); run `npm run push -- check`" });
+      if (!apns && !androidLive()) return reply.code(409).send({ error: "Apple push is not configured on the gateway (HELIX_APNS_*; run `npm run push -- check`) and no Android phone is connected" });
       let approvalId: string | undefined;
       if (b.approval) {
         const ask = approvals.request({ source: "request", tool: "request_user_approval", summary: `Test only, nothing will run: ${b.summary}`, reasons: ["simulated by the app"] });

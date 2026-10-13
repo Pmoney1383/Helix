@@ -6,6 +6,7 @@ import { VOICE_SEVERITIES } from "../persona/types.js";
 import type { RouterService } from "../router/router.js";
 import type { SessionManager } from "../sessions/manager.js";
 import { GatewayError } from "../sessions/manager.js";
+import type { LiveDevices } from "../notifications/live-devices.js";
 import type { AuthService } from "./auth.js";
 import { requireDevice } from "./auth.js";
 
@@ -22,7 +23,7 @@ const clientMessage = z.discriminatedUnion("type", [
  * (single-user system), and accepts send/interrupt commands. History for reconnects comes
  * from GET /v1/conversations/:id/messages?after=<seq>.
  */
-export function registerWebSocket(app: FastifyInstance, auth: AuthService, manager: SessionManager, router?: RouterService, persona?: PersonaService): void {
+export function registerWebSocket(app: FastifyInstance, auth: AuthService, manager: SessionManager, router?: RouterService, persona?: PersonaService, live?: LiveDevices): void {
   app.get("/v1/ws", { websocket: true, preValidation: requireDevice(auth) }, (socket, req) => {
     const device = req.device;
     const send = (obj: unknown) => {
@@ -30,7 +31,10 @@ export function registerWebSocket(app: FastifyInstance, auth: AuthService, manag
     };
 
     send({ type: "hello", deviceId: device?.id });
-    const unsubscribe = manager.bus.subscribe((event) => send(event));
+    const unsubscribeBus = manager.bus.subscribe((event) => send(event));
+    // While this socket is open the phone can be notified and rung through it (Android has no Apple push).
+    const disconnect = device ? live?.connect(device.id, device.platform) : undefined;
+    const unsubscribe = () => { unsubscribeBus(); disconnect?.(); };
 
     socket.on("message", (raw) => {
       let parsed: z.infer<typeof clientMessage>;

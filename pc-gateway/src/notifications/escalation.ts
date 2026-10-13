@@ -20,6 +20,9 @@ export interface Notifier {
   deliver(notice: Notice): Promise<void>;
 }
 
+/** Thrown by a notifier that has nothing to deliver to right now (no phone set up or connected): recorded as "unavailable". */
+export class ChannelUnavailable extends Error {}
+
 export type DeliveryStatus = "delivered" | "unavailable" | "suppressed" | "failed";
 export interface Delivery { channel: Channel; status: DeliveryStatus; reason?: string }
 
@@ -29,8 +32,8 @@ export type EscalationPolicy = Record<NoticeSeverity, Channel[]>;
  * INFO       -> in-app message only (no buzz)
  * IMPORTANT  -> message + visible push
  * CRITICAL   -> message + push + incoming call
- * Push and call channels are registered when Apple push is configured; until
- * then they are recorded as "unavailable" so the policy is already in force and visible in the log.
+ * Push and calls reach an iPhone through Apple push and an Android phone through its live connection. With neither
+ * available they are recorded as "unavailable" so the policy is already in force and visible in the log.
  */
 export const DEFAULT_POLICY: EscalationPolicy = {
   info: ["message"],
@@ -111,6 +114,7 @@ export class Escalation {
       await notifier.deliver(n);
       return { channel, status: "delivered" };
     } catch (err) {
+      if (err instanceof ChannelUnavailable) return { channel, status: "unavailable", reason: err.message };
       return { channel, status: "failed", reason: err instanceof Error ? err.message : String(err) };
     }
   }

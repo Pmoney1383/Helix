@@ -16,6 +16,8 @@ const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 export interface Device {
   id: string;
   name: string;
+  /** "ios", "android", "terminal", ... as given at pairing. */
+  platform?: string;
   /** The device's signing key (SPKI DER, base64) once it has enrolled one; from then on its requests must be signed. */
   publicKey?: string;
 }
@@ -110,9 +112,10 @@ export class AuthService {
   authenticate(token: string | undefined): Device | undefined {
     if (!token) return undefined;
     const row = this.db
-      .prepare("SELECT id, name, public_key AS publicKey FROM devices WHERE token_hash = ? AND revoked_at IS NULL")
-      .get(sha256(token)) as (Device & { publicKey: string | null }) | undefined;
+      .prepare("SELECT id, name, platform, public_key AS publicKey FROM devices WHERE token_hash = ? AND revoked_at IS NULL")
+      .get(sha256(token)) as (Device & { publicKey: string | null; platform: string | null }) | undefined;
     if (row && row.publicKey === null) delete (row as { publicKey?: string | null }).publicKey;
+    if (row && row.platform === null) delete (row as { platform?: string | null }).platform;
     if (row) this.db.prepare("UPDATE devices SET last_seen_at = ? WHERE id = ?").run(new Date().toISOString(), row.id);
     return row;
   }

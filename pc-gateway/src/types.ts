@@ -89,7 +89,19 @@ export type GatewayEvent =
   /** PC voice could not speak (turned off, GPU or RAM busy, failed to start): speak the agent.speech text with Apple's voice instead. */
   | { type: "agent.audio.unavailable"; sessionId: string; turnId: string; reason: string; message: string }
   /** `spoken` is the whole reply cleaned for speech (voice turns only); the sentences above are the same text in pieces. */
-  | { type: "agent.output.final"; sessionId: string; turnId: string; text: string; messageId: string; spoken?: string };
+  | { type: "agent.output.final"; sessionId: string; turnId: string; text: string; messageId: string; spoken?: string }
+  /** A notification for phones that have no Apple push (Android): shown by the app while it keeps the live connection open. */
+  | { type: "device.notification"; notification: DeviceNotification };
+
+export interface DeviceNotification {
+  title: string;
+  body: string;
+  severity: "info" | "important" | "critical";
+  kind: "event" | "approval" | "missed_call";
+  sessionId?: string;
+  approvalId?: string;
+  eventId?: string;
+}
 
 /** Shape of watcher events as they travel over the WebSocket (full model lives in monitoring/watch-types.ts). */
 export interface WatchEventPayload {
