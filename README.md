@@ -2,6 +2,8 @@
 
 Follow and steer your **Claude Code** and **Codex** sessions from your phone while you are away from your PC.
 
+**[▶ Watch the 48-second Helix demo](design/Helix_Launch_Trailer_1080x1920.mp4)**
+
 Helix is a small always-on gateway that runs on your Windows PC, plus an iPhone app (with CarPlay and Siri) and an
 Android app that talk to it over your private Tailscale network. Your agents keep running on your own machine with your own
 logins. Helix lets you chat with them, get pinged when something finishes or breaks, and approve or reject anything
