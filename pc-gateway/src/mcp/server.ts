@@ -4,7 +4,7 @@ import type { ComputerController } from "../computer/controller.js";
 import type { LiveDesktopViewer } from "../computer/live-viewer.js";
 import { registerComputerTools } from "../computer/tools.js";
 import { registerViewerProbe, type ViewerProbe } from "../computer/viewer-probe.js";
-import type { AuthService } from "../api/auth.js";
+import { RateLimiter, type AuthService } from "../api/auth.js";
 import type { ApprovalService } from "../permissions/approvals.js";
 import { classify, describeAction } from "../permissions/classifier.js";
 import { buildJobWatches, type JobProfile } from "../monitoring/presets.js";
@@ -48,6 +48,9 @@ const ok = (data: unknown): Result => ({ content: [{ type: "text", text: typeof 
 const fail = (message: string): Result => ({ content: [{ type: "text", text: message }], isError: true });
 
 /** Builds one MCP server exposing only the tools this context's scope allows. */
+/** A hosted chat may push the phone, but not spam it: at most this many pushes per connector per 10 minutes. */
+const hostedNotifyLimit = new RateLimiter(10, 10 * 60_000);
+
 export function createMcpServer(ctx: McpContext, deps: McpDeps): McpServer {
   const server = new McpServer({ name: "helix", version: "0.1.0" });
   registerComputerTools(server, ctx, deps);
@@ -218,7 +221,10 @@ export function createMcpServer(ctx: McpContext, deps: McpDeps): McpServer {
       severity: SeveritySchema.default("important"),
       project: z.string().max(100).optional().describe("Project or task name, shown in the notification."),
     },
-    async ({ title, message, severity, project }) => {
+    async ({ title, message, severity: requested, project }) => {
+      // A hosted chat can reach the phone with a push, but never ring it: critical is capped at important, and it is rate limited.
+      if (hosted && !hostedNotifyLimit.allow(ctx.actor)) return fail("Too many notifications from this connector (10 per 10 minutes). Tell the user in the chat instead.");
+      const severity = hosted && requested === "critical" ? "important" : requested;
       const label = project ? `[${project}] ${title}` : title;
       const sessionId = ctx.sessionId && deps.registry.get(ctx.sessionId) ? ctx.sessionId : undefined;
       const results = await deps.escalation.notify({

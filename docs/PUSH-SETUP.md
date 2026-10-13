@@ -109,8 +109,10 @@ Invoke-RestMethod http://127.0.0.1:7777/v1/push/test -Method Post -Headers @{ Au
 | `critical` | In-app + push + an incoming call |
 | Approval | Push at once; a call if still unanswered after `HELIX_APPROVAL_CALL_AFTER_MIN` (default 5, 0 = never) |
 
-- **Presence:** while you are at the PC (keyboard or mouse used within `HELIX_PRESENCE_AWAY_MIN`, default 5 minutes),
-  nothing buzzes. Everything still lands in the app. The app can force `away` or `home`.
+- **Presence:** pushes are sent whether or not you are at the PC, in every mode (`auto`, `home`, `away`), including
+  approval requests. Presence only gates *calls*: while you are at the PC (keyboard or mouse used within
+  `HELIX_PRESENCE_AWAY_MIN`, default 5 minutes), nothing rings. Everything also lands in the app. The app can force
+  `away` or `home`.
 - **Limits:** one ring per problem per 15 minutes, at most 3 calls per hour, and calls ring for `HELIX_RING_TIMEOUT_SEC`
   (default 30) before turning into a missed-call push.
 - Push previews are short on purpose. The details stay on the PC and load when you tap.

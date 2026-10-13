@@ -69,13 +69,24 @@ describe("alerts follow presence", () => {
   };
   const n = (severity: Notice["severity"]): Notice => ({ severity, title: "t", body: "", dedupeKey: "k" });
 
-  it("at the PC: everything lands in the app, nothing buzzes or rings", async () => {
+  it("at the PC: the app and the phone get the push, but nothing rings", async () => {
     const { e, message, push, call } = mk(false);
     const out = await e.notify(n("critical"));
-    assert.deepEqual(out.map((d) => `${d.channel}:${d.status}`), ["message:delivered", "push:suppressed", "call:suppressed"]);
-    assert.match(out[1]!.reason!, /you are at the PC/);
+    assert.deepEqual(out.map((d) => `${d.channel}:${d.status}`), ["message:delivered", "push:delivered", "call:suppressed"]);
+    assert.match(out[2]!.reason!, /you are at the PC/);
     assert.equal(message.sent.length, 1);
-    assert.equal(push.sent.length + call.sent.length, 0);
+    assert.equal(push.sent.length, 1);
+    assert.equal(call.sent.length, 0);
+  });
+
+  it("an important alert pushes at the PC and away alike", async () => {
+    for (const away of [false, true]) {
+      const { e, push, call } = mk(away);
+      const out = await e.notify(n("important"));
+      assert.deepEqual(out.map((d) => `${d.channel}:${d.status}`), ["message:delivered", "push:delivered"], `away=${away}`);
+      assert.equal(push.sent.length, 1);
+      assert.equal(call.sent.length, 0);
+    }
   });
 
   it("away: the normal severity policy applies", async () => {
@@ -97,6 +108,20 @@ describe("alerts follow presence", () => {
     away = true;
     await e.notify(n("critical"));
     assert.equal(call.sent.length, 1, "the first real call still goes out");
+  });
+
+  it("an approval request pushes on the first request in every presence mode", async () => {
+    for (const away of [false, true]) {
+      const { e, push, call } = mk(away);
+      const approval = { title: "Approval needed", body: "rm -rf build", dedupeKey: "approval:a1", approvalId: "a1", kind: "approval" as const };
+      const out = await e.notify({ ...approval, severity: "important" }, { skip: ["message"] });
+      assert.deepEqual(out.map((d) => `${d.channel}:${d.status}`), ["push:delivered"], `away=${away}`);
+      assert.equal(push.sent.length, 1);
+      // The escalated ring after a wait still follows presence.
+      const ring = await e.notify({ ...approval, severity: "critical", dedupeKey: "approval-call:a1" }, { skip: ["message", "push"] });
+      assert.equal(ring[0]!.status, away ? "delivered" : "suppressed", `ring away=${away}`);
+      assert.equal(call.sent.length, away ? 1 : 0);
+    }
   });
 
   it("skip lets a caller omit a channel it already covered", async () => {

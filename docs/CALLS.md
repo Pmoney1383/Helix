@@ -90,7 +90,7 @@ POST /v1/calls/start                        { "provider": "codex" }      -> "Cal
 The response's `script` is the **greeting to speak once connected** (in the user's personality). Report it to CallKit as an outgoing call, speak the greeting, then speak/listen through the route exactly as for a conversation call (with `voice: true`).
 
 ## 5. When the gateway rings you
-- Phone alerts (pushes and calls) are only sent while the user is **away from the PC**. At the PC everything still lands in the app via WebSocket. `GET/PUT /v1/presence` (`auto | away | home`) is how the app shows and overrides that.
+- Pushes are sent wherever the user is, at the PC or away (approval requests included, on the first request). Only **calls** (ringing) are limited to when the user is **away from the PC**. At the PC everything also lands in the app via WebSocket. `GET/PUT /v1/presence` (`auto | away | home`) is how the app shows and overrides that.
 - An approval that nobody answers by push escalates to a call after 5 minutes (`HELIX_APPROVAL_CALL_AFTER_MIN` on the PC).
 - Hard limits: one ring per problem per 15 minutes, 3 calls per hour overall.
 

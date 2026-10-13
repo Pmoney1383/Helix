@@ -102,9 +102,26 @@ describe("hosted MCP endpoint", () => {
     const c = await connect(`${base}/mcp`, { authorization: `Bearer ${hostedToken}` });
     const names = (await c.listTools()).tools.map((t) => t.name);
     assert.ok(names.includes("get_pc_status") && names.includes("run_safe_command") && names.includes("read_file"));
-    for (const banned of ["run_command", "write_file", "stop_process", "request_user_approval", "notify_user", "handoff_current_conversation"]) {
+    for (const banned of ["run_command", "write_file", "stop_process", "request_user_approval", "handoff_current_conversation"]) {
       assert.ok(!names.includes(banned), banned);
     }
+    await c.close();
+  });
+
+  it("lets a hosted chat push the phone, but critical is capped at a push (no ring) and it is rate limited", async () => {
+    const c = await connect(`${base}/mcp`, { authorization: `Bearer ${hostedToken}` });
+    assert.ok((await c.listTools()).tools.some((t) => t.name === "notify_user"));
+    const r: any = await c.callTool({ name: "notify_user", arguments: { title: "Done", message: "x", severity: "critical" } });
+    assert.ok(!r.isError, text(r));
+    const out = JSON.parse(text(r));
+    const channels = [...out.delivered, ...out.unavailable, ...out.failed, ...out.suppressed.map((x: string) => x.split(":")[0])];
+    assert.ok(!channels.includes("call"), `critical was capped, so no call: ${JSON.stringify(out)}`);
+    let refused = 0;
+    for (let i = 0; i < 12; i++) {
+      const x: any = await c.callTool({ name: "notify_user", arguments: { title: `n${i}` } });
+      if (x.isError) { refused++; assert.match(text(x), /Too many notifications/); }
+    }
+    assert.ok(refused >= 1, "the limit of 10 per 10 minutes kicks in");
     await c.close();
   });
 

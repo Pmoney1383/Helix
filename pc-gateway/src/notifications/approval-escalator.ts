@@ -11,8 +11,8 @@ export interface ApprovalEscalatorOptions {
  * Gets approval requests to the user wherever they are, in two steps:
  *   1. immediately: an in-app message (when the approval has no conversation of its own) and a push;
  *   2. if still unanswered after `callAfterMs`: a phone call that asks for a spoken approve/reject.
- * Both steps go through the escalation policy, so presence (at the PC = stay quiet), the per-problem call
- * cooldown and the hourly call cap all still apply.
+ * Both steps go through the escalation policy: the push is never held back by presence, while the call is only
+ * placed when you are away, and the per-problem call cooldown and the hourly call cap still apply.
  */
 export class ApprovalEscalator {
   private readonly timers = new Map<string, NodeJS.Timeout>();

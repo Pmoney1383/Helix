@@ -137,13 +137,13 @@ describe("the alert policy now reaches the phone", () => {
     await r.close();
   });
 
-  it("at the PC nothing is pushed or rung (presence), though the message still lands", async () => {
+  it("at the PC the push still goes out but nothing rings (presence)", async () => {
     const r = await rig();
     await registered(r);
     r.gw.presence.setMode("home");
     const out = await r.gw.escalation.notify({ severity: "critical", title: "x", body: "", dedupeKey: "c" });
-    assert.deepEqual(out.map((d) => `${d.channel}:${d.status}`), ["message:delivered", "push:suppressed", "call:suppressed"]);
-    assert.equal(mock.received.length, 0);
+    assert.deepEqual(out.map((d) => `${d.channel}:${d.status}`), ["message:delivered", "push:delivered", "call:suppressed"]);
+    assert.equal(r.pushes("voip").length, 0, "no ring at the PC");
     await r.close();
   });
 
@@ -347,13 +347,15 @@ describe("an approval call", () => {
     await r.close();
   });
 
-  it("at the PC the approval still waits in the app but nothing buzzes or rings", async () => {
+  it("at the PC the approval is still pushed at once, but it never rings", async () => {
     const r = await rig({ approvalCallAfterMs: 80 });
     await registered(r);
     r.gw.presence.setMode("home");
     ask(r);
+    await r.until(() => r.pushes("alert").length === 1);
     await new Promise((res) => setTimeout(res, 250));
-    assert.equal(mock.received.length, 0);
+    assert.equal(r.pushes("alert").length, 1, "one push, on the first request");
+    assert.equal(r.pushes("voip").length, 0, "no ring at the PC");
     assert.equal(r.gw.approvals.list("pending").length, 1);
     await r.close();
   });

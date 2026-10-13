@@ -41,8 +41,8 @@ export const DEFAULT_POLICY: EscalationPolicy = {
 export interface EscalationOptions {
   policy?: EscalationPolicy;
   /**
-   * When set, phone alerts (push, calls) are only sent while the user is away from the PC.
-   * In-app messages are always delivered. Without it, everything is sent.
+   * When set, phone calls are only placed while the user is away from the PC.
+   * In-app messages and pushes are always delivered, wherever the user is. Without it, everything is sent.
    */
   presence?: { isAway(): boolean; status(): { reason: string } };
   /** A given problem may ring at most once per this window. */
@@ -88,7 +88,8 @@ export class Escalation {
   private async deliverOne(channel: Channel, n: Notice): Promise<Delivery> {
     const notifier = this.channels[channel];
     if (!notifier) return { channel, status: "unavailable", reason: `${channel} channel is not configured yet` };
-    if (channel !== "message" && this.presence && !this.presence.isAway()) {
+    // Only the ring is presence-gated: a push is silent enough to send even while the user sits at the PC.
+    if (channel === "call" && this.presence && !this.presence.isAway()) {
       return { channel, status: "suppressed", reason: `not sent: ${this.presence.status().reason}` };
     }
 

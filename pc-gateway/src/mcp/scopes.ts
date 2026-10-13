@@ -36,7 +36,7 @@ export type ToolName =
 
 const SCOPE_TOOLS: Record<Scope, ReadonlySet<string>> = {
   "pc.observe": new Set(OBSERVE),
-  "pc.hosted": new Set([...OBSERVE, ...HOSTED_EXEC, ...APPS, ...AGENT_CHAT]),
+  "pc.hosted": new Set([...OBSERVE, ...HOSTED_EXEC, ...APPS, ...AGENT_CHAT, ...NOTIFY]),
   "pc.control": new Set([...OBSERVE, ...CONTROL, ...APPS, ...NOTIFY, ...AGENT_CHAT]),
   "pc.agent.full": new Set([...OBSERVE, ...CONTROL, ...APPS, ...AGENT_ONLY, ...NOTIFY]),
   "pc.agent.local": new Set(LOCAL_AGENT),

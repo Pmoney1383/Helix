@@ -132,6 +132,7 @@ No phone yet? You can drive the gateway from a terminal: `npm run client -- pair
 - **The phone cannot connect:** Tailscale must be on for both devices, and the address must be the `https://...ts.net` one
   from `tailscale serve status`. Plain `http://` or a LAN IP will not work, because iOS requires TLS.
 - **Agents don't call Helix tools:** sessions opened before `helix connect` need a restart. `npm run helix -- status` shows what is wired.
-- **Phone never buzzes:** presence. While you are at the PC, pushes and calls are held back on purpose. Use
-  `PUT /v1/presence {"mode":"away"}` or the app's presence switch to test.
+- **Phone never rings:** presence. Pushes are sent whether or not you are at the PC, but incoming calls are held back
+  while you are at the PC on purpose. Use `PUT /v1/presence {"mode":"away"}` or the app's presence switch to test calls.
+  If even pushes never arrive, check `npm run push -- check` and [PUSH-SETUP.md](PUSH-SETUP.md).
 - **Codex sessions missing:** set `HELIX_CODEX_BIN` to the full path. The service does not always share your shell's `PATH`.
