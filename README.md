@@ -93,7 +93,7 @@ repeated lines, and survive gateway restarts.
 | `process` | a pid/name stops (or, with `expect: stopped`, when it finishes) | "tell me when this build exits" |
 | `log` | a regex matches a new line, or the log goes quiet | `ERROR`, `CUDA out of memory`, `Epoch 10/10` |
 | `file` | exists / missing / modified / stale | a checkpoint appears, a heartbeat file stops updating |
-| `command` | a non-destructive PowerShell check stops matching | `docker ps` still shows the container |
+| `command` | a non-destructive PowerShell check stops matching (a terminal agent's command watch needs your approval once, when it is created) | `docker ps` still shows the container |
 | `http` | a URL fails N times in a row | your local dev server or a deployed site |
 | `gpu` | too hot, VRAM nearly full, or idle too long | a stalled training run |
 | `git` | HEAD moves or the branch changes | an agent committed |
@@ -210,8 +210,9 @@ refuses until you confirm (`HELIX_HEAVY_SESSION_TOKENS`, `HELIX_CACHE_COLD_SEC`)
 
 ### 15. Device-key signing
 
-Optionally require every request, and the WebSocket upgrade, to be signed by a key held in your phone's Secure Enclave,
-so a leaked token alone is useless (`HELIX_REQUIRE_DEVICE_SIGNING`). See [docs/DEVICE-SIGNING.md](docs/DEVICE-SIGNING.md).
+Every request, and the WebSocket upgrade, must be signed by a key held on your phone (Secure Enclave or Android
+Keystore), so a leaked token alone is useless. On by default (`HELIX_REQUIRE_DEVICE_SIGNING`). See
+[docs/DEVICE-SIGNING.md](docs/DEVICE-SIGNING.md).
 
 ## Agents talking to each other
 

@@ -125,7 +125,8 @@ No phone yet? You can drive the gateway from a terminal: `npm run client -- pair
 | Desktop control for hosted chats | [../pc-gateway/docs/COMPUTER-USE.md](../pc-gateway/docs/COMPUTER-USE.md) |
 | CarPlay | [CARPLAY.md](CARPLAY.md) |
 | Usage guard mod for Claude Code | [../mods/usage-guard/README.md](../mods/usage-guard/README.md) |
-| Require signed requests from paired phones | `HELIX_REQUIRE_DEVICE_SIGNING=true` once Settings > Gateway > Request signing shows On ([DEVICE-SIGNING.md](DEVICE-SIGNING.md)) |
+| Signed requests from paired phones | On by default; Settings > Gateway > Request signing shows On. `HELIX_REQUIRE_DEVICE_SIGNING=false` only for clients that cannot sign ([DEVICE-SIGNING.md](DEVICE-SIGNING.md)) |
+| Another MCP client for the hosted connector | Add its return host to `HELIX_OAUTH_REDIRECT_HOSTS` (default `chatgpt.com,claude.ai,claude.com`, [HOSTED.md](HOSTED.md)) |
 
 ## Troubleshooting
 

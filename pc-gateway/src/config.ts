@@ -44,7 +44,9 @@ const schema = z.object({
   HELIX_TTS_CLIPS_DIR: z.string().optional(),
   HELIX_TTS_PORT: z.coerce.number().int().min(1024).max(65535).default(7791),
   HELIX_TTS_SMOOTH_HOLD_SEC: z.coerce.number().min(0).max(60).default(12),
-  HELIX_REQUIRE_DEVICE_SIGNING: z.enum(["true", "false"]).default("false"),
+  HELIX_REQUIRE_DEVICE_SIGNING: z.enum(["true", "false"]).default("true"),
+  /** Comma-separated hosts a connector may be sent back to after sign-in (subdomains included); "*" allows any https host. */
+  HELIX_OAUTH_REDIRECT_HOSTS: z.string().default("chatgpt.com,claude.ai,claude.com"),
   HELIX_TTS_WARM_WHEN_AWAY: z.enum(["true", "false"]).default("true"),
   HELIX_TTS_IDLE_SEC: z.coerce.number().int().min(10).max(3600).default(180),
   HELIX_TTS_MIN_FREE_VRAM_MB: z.coerce.number().min(0).default(6000),
@@ -74,6 +76,8 @@ export interface Config {
   presenceAwayMin: number;
   /** Refuse devices that have no signing key enrolled (turn on once the phone is enrolled; see api/device-signing.ts). */
   requireDeviceSigning: boolean;
+  /** Hosts a hosted connector may return to after OAuth sign-in (subdomains included), or "any" https host. */
+  oauthRedirectHosts: string[] | "any";
   /** Index every Claude/Codex session on this machine. */
   discovery: boolean;
   tts: {
@@ -122,6 +126,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     approvalCallAfterMs: Math.round(e.HELIX_APPROVAL_CALL_AFTER_MIN * 60_000),
     presenceAwayMin: e.HELIX_PRESENCE_AWAY_MIN,
     requireDeviceSigning: e.HELIX_REQUIRE_DEVICE_SIGNING === "true",
+    oauthRedirectHosts: parseRedirectHosts(e.HELIX_OAUTH_REDIRECT_HOSTS),
     discovery: e.HELIX_DISCOVERY === "true",
     tts: {
       enabled: e.HELIX_TTS_ENABLED === "true", engine: e.HELIX_TTS_ENGINE, python: e.HELIX_TTS_PYTHON, reference: e.HELIX_TTS_REFERENCE, qwenRoot: e.HELIX_TTS_QWEN_ROOT,
@@ -131,6 +136,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     },
     logLevel: e.HELIX_LOG_LEVEL,
   };
+}
+
+export function parseRedirectHosts(value: string): Config["oauthRedirectHosts"] {
+  const hosts = value.split(",").map((h) => h.trim().toLowerCase().replace(/^\*\./, "")).filter(Boolean);
+  return hosts.includes("*") ? "any" : hosts;
 }
 
 function parseViewerIceServers(value?: string): Config["viewerIceServers"] {

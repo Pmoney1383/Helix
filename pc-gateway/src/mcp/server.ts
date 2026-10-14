@@ -363,7 +363,21 @@ export function createMcpServer(ctx: McpContext, deps: McpDeps): McpServer {
       severity: SeveritySchema.optional(),
       wakeMe: z.boolean().optional().describe("When it fires, send the event to this session so you can investigate."),
     },
-    ({ name, type, config, intervalSec, severity, wakeMe }) => {
+    async ({ name, type, config, intervalSec, severity, wakeMe }, signal) => {
+      // A command watch keeps running a command on a timer, unattended and after the session ends. Terminal agents
+      // get no command tool from Helix otherwise, so the user approves each one once, when it is created.
+      if (type === "command" && ctx.scope === "pc.agent.local") {
+        const command = typeof config.command === "string" ? config.command : "";
+        const c = classify({ tool: "run_command", input: { command } });
+        if (!command || c.destructive) return fail(`watch commands must be a non-destructive command${c.reasons.length ? ` (${c.reasons.join("; ")})` : ""}`);
+        const { outcome } = deps.approvals.request({
+          sessionId: ctx.sessionId, source: "tool", tool: "create_status_watch",
+          summary: `A terminal agent wants a status watch "${name}" that runs this command every ${intervalSec ?? "default"} s until removed:\n${command.slice(0, 500)}`,
+          reasons: ["command watches run unattended on a timer"], signal,
+        });
+        const r = await outcome;
+        if (!r.approved) return fail(`The user did not approve the command watch (${r.status}).`);
+      }
       const w = deps.watchers.create({
         name, type, config, intervalSec, severity, sessionId: ctx.sessionId,
         wake: wakeMe && ctx.sessionId ? { sessionId: ctx.sessionId, cooldownMin: 30 } : undefined,

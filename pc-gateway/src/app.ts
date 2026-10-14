@@ -78,7 +78,7 @@ export interface Gateway {
 }
 
 export async function buildGateway(
-  config: Pick<Config, "defaultProjectPath" | "logLevel"> & Partial<Pick<Config, "approvalTtlMs" | "desktopApprovals" | "viewerIceServers" | "viewerCards">> & { requireDeviceSigning?: boolean; dataDir?: string; publicUrl?: string; tts?: Config["tts"]; escalation?: EscalationOptions; apns?: ApnsConfig; ringTimeoutMs?: number; approvalCallAfterMs?: number; presenceAwayMin?: number; routerHome?: string; discovery?: { homes: AgentHomes; codexLiveSec?: number } },
+  config: Pick<Config, "defaultProjectPath" | "logLevel"> & Partial<Pick<Config, "approvalTtlMs" | "desktopApprovals" | "viewerIceServers" | "viewerCards" | "oauthRedirectHosts">> & { requireDeviceSigning?: boolean; dataDir?: string; publicUrl?: string; tts?: Config["tts"]; escalation?: EscalationOptions; apns?: ApnsConfig; ringTimeoutMs?: number; approvalCallAfterMs?: number; presenceAwayMin?: number; routerHome?: string; discovery?: { homes: AgentHomes; codexLiveSec?: number } },
   db: Db,
   providers: Partial<Record<ProviderName, AgentProvider>>
 ): Promise<Gateway> {
@@ -221,7 +221,7 @@ export async function buildGateway(
   registerHttp(app, auth, manager, approvals, watchers, indexer, { localTokens, agentEvents, presence }, router, { devices, calls, push, apns, live, persona, tts, clips, callAudio }, trust);
   registerWebSocket(app, auth, manager, router, persona, live);
   const oauth = new OAuthService(db, localTokens);
-  registerOAuth(app, oauth, config.publicUrl);
+  registerOAuth(app, oauth, config.publicUrl, config.oauthRedirectHosts);
   registerMcp(app, (token) => agentTokens.lookup(token) ?? localTokens.lookup(token), {
     auth, policy, approvals, trust, registry: manager.registry, messages: manager.messages, bus: manager.bus, watchers, escalation, router, dataDir: config.dataDir, publicUrl: config.publicUrl, computer, viewerProbe, liveViewer, liveViewerCards: config.viewerCards ?? false, desktopApprovals: config.desktopApprovals ?? true,
   });

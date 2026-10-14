@@ -101,6 +101,11 @@ https://<pc>.<tailnet>.ts.net/mcp
 3. Type that code on the consent page and press Approve. Only someone who can read the PC's terminal can approve, so a stranger who finds the URL cannot connect.
 4. The app gets a 1-hour access token plus a rotating refresh token (60 days) and renews silently. The scope is still only `pc.hosted`.
 
+A connector may only be sent back to `chatgpt.com`, `claude.ai` or `claude.com` (or their subdomains, or loopback for
+local tools) after sign-in. To use another MCP client, add its host to `HELIX_OAUTH_REDIRECT_HOSTS` in `.env`
+(comma-separated, replaces the list; `*` allows any https host). Registrations and consent pages for other hosts are
+refused, including ones registered before the list existed.
+
 Cut everything off with `npm run hosted -- revoke --all` (access and refresh tokens). Wrong codes are rate limited:
 after 10 wrong codes in 10 minutes, approval is locked until they age out. The internet (Funnel) and your tailnet are
 counted separately, so strangers guessing from the internet cannot lock you out: if the page says "Too many wrong codes

@@ -151,4 +151,41 @@ describe("watch MCP tools (agents can set up monitoring themselves)", () => {
     for (const w of made.created) gw.watchers.remove(w.id);
     await c.close();
   });
+
+  it("a terminal agent's command watch waits for the user's approval once; its other watches do not", async () => {
+    const c = await mcp("pc.agent.local");
+    const pending = async () => {
+      for (let i = 0; i < 100; i++) {
+        const a = gw.approvals.list("pending").find((x) => x.tool === "create_status_watch");
+        if (a) return a;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      throw new Error("no approval was requested");
+    };
+    const args = { name: "disk", type: "command", config: { command: "Get-PSDrive C" }, intervalSec: 300 };
+
+    const denied = c.callTool({ name: "create_status_watch", arguments: { ...args, name: "disk denied" } });
+    const ask = await pending();
+    assert.match(ask.summary, /Get-PSDrive C/);
+    assert.match(ask.summary, /every 300 s/);
+    gw.approvals.resolve(ask.id, false);
+    const r1 = await denied;
+    assert.equal(r1.isError, true);
+    assert.ok(!gw.watchers.list().some((w) => w.name === "disk denied"), "nothing is created without approval");
+
+    const approved = c.callTool({ name: "create_status_watch", arguments: args });
+    gw.approvals.resolve((await pending()).id, true);
+    const made = JSON.parse(text(await approved));
+    assert.equal(gw.watchers.get(made.created.id)?.type, "command");
+    gw.watchers.remove(made.created.id);
+
+    // Destructive commands are refused before anyone is asked; non-command watches need no approval.
+    const bad = await c.callTool({ name: "create_status_watch", arguments: { name: "evil", type: "command", config: { command: "Remove-Item C:\\data -Recurse" } } });
+    assert.equal(bad.isError, true);
+    assert.equal(gw.approvals.list("pending").length, 0);
+    const http = JSON.parse(text(await c.callTool({ name: "create_status_watch", arguments: { name: "api", type: "http", config: { url: "http://127.0.0.1:1/" } } })));
+    assert.equal(gw.approvals.list("pending").length, 0);
+    gw.watchers.remove(http.created.id);
+    await c.close();
+  });
 });

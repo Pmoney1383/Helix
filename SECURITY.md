@@ -22,8 +22,7 @@ version or commit. You will get a reply as soon as possible, and credit in the f
 - The classifier matches patterns. Indirect deletion, where an agent writes a script that deletes files and then runs
   it, is a documented gap. It is a strong guardrail, not a sandbox.
 - Overwriting a file with a write tool is not gated.
-- Anyone with access to your tailnet and a paired device token can act as that device. Revoke lost phones with
-  `DELETE /v1/devices/:id`, and consider `HELIX_REQUIRE_DEVICE_SIGNING=true`.
-- Request signing does not stop code running on the unlocked phone, the software key used where there is no Secure
-  Enclave is only as safe as the Keychain, and the nonce cache is lost on a gateway restart. See
-  [docs/DEVICE-SIGNING.md](docs/DEVICE-SIGNING.md).
+- With `HELIX_REQUIRE_DEVICE_SIGNING=false`, anyone with access to your tailnet and a paired device token can act as
+  that device. Signing is on by default; revoke lost phones with `DELETE /v1/devices/:id`.
+- Request signing does not stop code running on the unlocked phone, and the software key used where there is no Secure
+  Enclave is only as safe as the Keychain. See [docs/DEVICE-SIGNING.md](docs/DEVICE-SIGNING.md).

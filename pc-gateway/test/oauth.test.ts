@@ -5,10 +5,12 @@ import { after, before, describe, it } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { buildGateway, type Gateway } from "../src/app.js";
+import { loadConfig } from "../src/config.js";
+import { redirectAllowed } from "../src/oauth/oauth.js";
 import { FakeProvider } from "../src/providers/fake.js";
 import { openDb } from "../src/storage/sqlite.js";
 
-const REDIRECT = "https://chatgpt.example/callback";
+const REDIRECT = "https://chatgpt.com/connector_platform_oauth_redirect";
 const PUBLIC = "https://helix.example.ts.net:8443";
 
 let gw: Gateway;
@@ -58,11 +60,40 @@ describe("OAuth for hosted connectors", () => {
     assert.match(r.headers.get("www-authenticate") ?? "", /resource_metadata="https:\/\/helix\.example\.ts\.net:8443\/\.well-known\/oauth-protected-resource\/mcp"/);
   });
 
-  it("registration only accepts https (or loopback) redirects", async () => {
-    const bad = await fetch(`${base}/oauth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris: ["http://evil.example/cb"] }) });
-    assert.equal(bad.status, 400);
+  it("registration only accepts loopback or https redirects to the allowed hosts", async () => {
+    const reg = (uri: string) => fetch(`${base}/oauth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris: [uri] }) });
+    assert.equal((await reg("http://evil.example/cb")).status, 400);
+    const other = await reg("https://evil.example/cb");
+    assert.equal(other.status, 400, "https alone is not enough: the host must be one Helix is meant for");
+    assert.match(((await other.json()) as any).error_description, /chatgpt\.com, claude\.ai, claude\.com/);
+    assert.equal((await reg("https://chatgpt.com.evil.example/cb")).status, 400, "a look-alike host is not a subdomain");
+    assert.equal((await reg("http://chatgpt.com/cb")).status, 400, "plain http only for loopback");
     assert.ok(await register());
+    assert.ok(await register("https://claude.ai/api/mcp/auth_callback"));
+    assert.ok(await register("https://www.claude.com/cb"));
     assert.ok(await register("http://localhost:3000/cb"));
+  });
+
+  it("a connector registered before the allowlist, with another host, cannot start sign-in", async () => {
+    const old = gw.oauth.registerClient("old", ["https://elsewhere.example/cb"]).clientId;
+    const q = new URLSearchParams({ response_type: "code", client_id: old, redirect_uri: "https://elsewhere.example/cb", code_challenge: pkce().challenge, code_challenge_method: "S256" });
+    const r = await fetch(`${base}/oauth/authorize?${q}`);
+    assert.equal(r.status, 400);
+    assert.match(await r.text(), /HELIX_OAUTH_REDIRECT_HOSTS/);
+  });
+
+  it("HELIX_OAUTH_REDIRECT_HOSTS replaces the list; * allows any https host", () => {
+    assert.deepEqual(loadConfig({}).oauthRedirectHosts, ["chatgpt.com", "claude.ai", "claude.com"]);
+    assert.deepEqual(loadConfig({ HELIX_OAUTH_REDIRECT_HOSTS: " Example.org, *.tools.example " }).oauthRedirectHosts, ["example.org", "tools.example"]);
+    assert.equal(loadConfig({ HELIX_OAUTH_REDIRECT_HOSTS: "*" }).oauthRedirectHosts, "any");
+    assert.equal(redirectAllowed("https://anything.example/cb", "any"), true);
+    assert.equal(redirectAllowed("http://anything.example/cb", "any"), false);
+    assert.equal(redirectAllowed("https://a.tools.example/cb", ["tools.example"]), true);
+  });
+
+  it("device signing is required by default", () => {
+    assert.equal(loadConfig({}).requireDeviceSigning, true);
+    assert.equal(loadConfig({ HELIX_REQUIRE_DEVICE_SIGNING: "false" }).requireDeviceSigning, false);
   });
 
   it("full flow: consent with the owner's code, PKCE exchange, then the token works on /mcp", async () => {
@@ -210,7 +241,7 @@ describe("consent page security policy", () => {
     const clientId = await register();
     const q = new URLSearchParams({ response_type: "code", client_id: clientId, redirect_uri: REDIRECT, code_challenge: pkce().challenge, code_challenge_method: "S256" });
     const csp = (await fetch(`${base}/oauth/authorize?${q}`)).headers.get("content-security-policy") ?? "";
-    assert.match(csp, /form-action 'self' https:\/\/chatgpt\.example;/);
+    assert.match(csp, /form-action 'self' https:\/\/chatgpt\.com;/);
     assert.match(csp, /frame-ancestors 'none'/);
   });
 });

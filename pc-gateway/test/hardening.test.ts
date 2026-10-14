@@ -12,7 +12,7 @@ import { FakeProvider } from "../src/providers/fake.js";
 import { openDb } from "../src/storage/sqlite.js";
 
 const FUNNEL = { "tailscale-funnel-request": "?1" };
-const REDIRECT = "https://chatgpt.example/callback";
+const REDIRECT = "https://chatgpt.com/connector_platform_oauth_redirect";
 
 let gw: Gateway;
 before(async () => {

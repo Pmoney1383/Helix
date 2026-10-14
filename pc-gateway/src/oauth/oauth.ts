@@ -176,15 +176,27 @@ const registerBody = z.object({
   redirect_uris: z.array(z.string().url().max(500)).min(1).max(10),
 }).passthrough();
 
-/** https only, except loopback for local tools. */
-const redirectOk = (u: string): boolean => {
+/** Where a connector may be sent back to after sign-in, unless HELIX_OAUTH_REDIRECT_HOSTS says otherwise. */
+export const DEFAULT_REDIRECT_HOSTS: readonly string[] = ["chatgpt.com", "claude.ai", "claude.com"];
+
+/**
+ * Loopback (local tools) always; otherwise https to an allowed host or one of its subdomains. "any" allows every https
+ * host. The owner's code still has to be typed on the consent page, but this keeps a stranger's registration from
+ * sending a sign-in anywhere but the apps Helix is meant for.
+ */
+export function redirectAllowed(u: string, hosts: readonly string[] | "any" = DEFAULT_REDIRECT_HOSTS): boolean {
   try {
     const url = new URL(u);
-    return url.protocol === "https:" || (url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname));
+    if ((url.protocol === "http:" || url.protocol === "https:") && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) return true;
+    if (url.protocol !== "https:") return false;
+    if (hosts === "any") return true;
+    const host = url.hostname.toLowerCase();
+    return hosts.some((h) => host === h || host.endsWith(`.${h}`));
   } catch { return false; }
-};
+}
 
-export function registerOAuth(app: FastifyInstance, oauth: OAuthService, publicUrl?: string): void {
+export function registerOAuth(app: FastifyInstance, oauth: OAuthService, publicUrl?: string, redirectHosts: readonly string[] | "any" = DEFAULT_REDIRECT_HOSTS): void {
+  const hostsText = redirectHosts === "any" ? "any https host" : redirectHosts.join(", ");
   const ipLimiter: RL = new RateLimiter(10, 60_000);
   const registerLimiter: RL = new RateLimiter(20, 60_000);
   // Behind Tailscale every request comes from loopback, so the address alone would make these limits shared by
@@ -238,8 +250,11 @@ export function registerOAuth(app: FastifyInstance, oauth: OAuthService, publicU
   app.post("/oauth/register", async (req, reply) => {
     if (!registerLimiter.allow(limitKey(req))) return reply.code(429).send({ error: "too_many_requests" });
     const parsed = registerBody.safeParse(req.body);
-    if (!parsed.success || !parsed.data.redirect_uris.every(redirectOk)) {
-      return reply.code(400).send({ error: "invalid_redirect_uri", error_description: "redirect_uris must be https (or loopback http)" });
+    if (!parsed.success || !parsed.data.redirect_uris.every((u) => redirectAllowed(u, redirectHosts))) {
+      return reply.code(400).send({
+        error: "invalid_redirect_uri",
+        error_description: `redirect_uris must be loopback or https on an allowed host (${hostsText}; HELIX_OAUTH_REDIRECT_HOSTS changes the list)`,
+      });
     }
     const name = (parsed.data.client_name ?? "connector").slice(0, 100);
     const { clientId } = oauth.registerClient(name, parsed.data.redirect_uris);
@@ -281,6 +296,8 @@ ${error ? `<p class="e">${esc(error)}</p>` : ""}
     const client = q.client_id ? oauth.client(q.client_id) : undefined;
     // Never redirect to an unregistered address: errors about these fields are shown here, not sent anywhere.
     if (!client || !q.redirect_uri || !client.redirectUris.includes(q.redirect_uri)) return fail(reply, "Unknown connector or redirect address.");
+    // Also checked here, so a registration from before the list existed (or before it was narrowed) stops working too.
+    if (!redirectAllowed(q.redirect_uri, redirectHosts)) return fail(reply, `This connector returns to a host Helix does not allow (allowed: ${hostsText}). Set HELIX_OAUTH_REDIRECT_HOSTS on the PC to add it.`);
     if (q.response_type !== "code" || !q.code_challenge || q.code_challenge_method !== "S256") return fail(reply, "This connector must use authorization code with PKCE (S256).");
     const id = oauth.beginRequest({ clientId: q.client_id!, redirectUri: q.redirect_uri, challenge: q.code_challenge, state: q.state });
     return consent(reply, id, client.name, q.redirect_uri);

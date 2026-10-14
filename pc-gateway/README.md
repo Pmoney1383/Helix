@@ -77,7 +77,7 @@ Cheap deterministic checks on timers. They watch *anything*: your own jobs, a bu
 | `process` | a pid/name stops running (or, with `expect: "stopped"`, when it finishes: quiet while it runs, loud when it ends) |
 | `log` | a regex matches a *new* line (per-pattern severity), or the log goes quiet (`staleAfterSec`) |
 | `file` | exists / missing / modified / stale |
-| `command` | a non-destructive PowerShell check stops matching its expected exit code / output |
+| `command` | a non-destructive PowerShell check stops matching its expected exit code / output. Created by a terminal agent (`pc.agent.local`), it waits for your approval once. |
 | `http` | a URL fails `failAfter` times in a row |
 | `gpu` | too hot, VRAM nearly full, or idle for a while (stalled run) |
 | `git` | HEAD moves (a commit) or the branch changes |
@@ -190,7 +190,7 @@ A hosted chat gets its own `pc.hosted` credential: all read-only observe tools p
 - **Per-turn processes.** Each message runs `claude -p --resume <id>` and exits; there is no long-lived Claude process. This makes "resume a stopped session" the normal path and survives gateway restarts. Cost: about 3 s startup per turn. If that hurts voice calls, switch the provider to a persistent `--input-format stream-json` process behind the same interface.
 - **Provider interface** collapsed to `createSession()` + `send()` with an `AbortSignal` for interrupt (see `providers/provider.ts`).
 - **Permissions.** `bypassPermissions` is intentionally not selectable. Claude runs in its normal permission mode and every prompt is answered by the approval gate above.
-- **Auth.** Pairing issues a random bearer token (stored hashed). Pairing codes are created only by the local `npm run pair` CLI; there is no network endpoint to mint one. Optional device-key request signing (`HELIX_REQUIRE_DEVICE_SIGNING`, `api/device-signing.ts`) adds a per-request signature from a key held on the phone (Secure Enclave or Android Keystore); see [../docs/DEVICE-SIGNING.md](../docs/DEVICE-SIGNING.md).
+- **Auth.** Pairing issues a random bearer token (stored hashed). Pairing codes are created only by the local `npm run pair` CLI; there is no network endpoint to mint one. Device-key request signing (`HELIX_REQUIRE_DEVICE_SIGNING`, on by default, `api/device-signing.ts`) adds a per-request signature from a key held on the phone (Secure Enclave or Android Keystore); see [../docs/DEVICE-SIGNING.md](../docs/DEVICE-SIGNING.md).
 - **Messages** carry a monotonic `seq` so clients can sync with `?after=`.
 
 ## Desktop computer use (opt-in)

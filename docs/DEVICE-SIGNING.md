@@ -67,13 +67,15 @@ pairing and signing status before reconnecting.
 A device that has a key enrolled must **always** sign, whatever this setting says. The setting only decides what
 happens to devices without a key:
 
-| | `false` (default) | `true` |
+| | `false` | `true` (default) |
 |---|---|---|
 | Paired device with no key | Allowed, unsigned | Refused (`401 key_required`), except the two `/v1/devices/me/key` calls it needs to enroll (enrolling also needs a fresh `pairingCode`) |
 | Pairing without a public key | Allowed | Refused (`400 key_required`) |
 
-Turn it on only after every phone you use shows signing as **On**. Clients that do not sign, such as the
-`npm run client` test CLI, cannot pair or connect while it is on. Hosted connectors (ChatGPT, claude.ai) use OAuth
+It is on by default: the iPhone and Android apps enroll a key when they pair. A phone paired with an older app version
+that has no key is refused until it enrolls; the app asks you to pair again, so run `npm run pair` on the PC and use
+**Settings > Pair Again…**. Clients that do not sign, such as the `npm run client` test CLI, cannot pair or connect
+while it is on; set `HELIX_REQUIRE_DEVICE_SIGNING=false` to use them. Hosted connectors (ChatGPT, claude.ai) use OAuth
 and are not affected.
 
 ## Where to see it
@@ -93,5 +95,5 @@ creates a new device record with the new key. The old record stays until you rev
 - Signing protects against a copied token. It does not protect against code running on the unlocked phone itself,
   which can ask the Secure Enclave to sign.
 - The software fallback key is only as safe as the Keychain.
-- Signing is off by default. The phone has to run an app version with signing, and you have to turn on
-  `HELIX_REQUIRE_DEVICE_SIGNING`, before devices without a key are shut out.
+- Turning `HELIX_REQUIRE_DEVICE_SIGNING` off lets devices without a key in again, so a copied token from such a
+  device works on its own.
