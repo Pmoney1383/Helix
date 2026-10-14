@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { WebSocket as ServerSocket } from "ws";
+import { browserSource } from "./browser-source.js";
 
 /** Bounded, ticket-scoped signaling only. Media never passes through Fastify. */
 export function registerRemoteProbe(app: FastifyInstance, valid: (ticket: unknown) => boolean): void {
@@ -152,7 +153,7 @@ export function remoteProbeClient(video: HTMLVideoElement, status: (text: string
 export function remoteSenderHtml(): string {
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>Helix PC sender</title></head><body style="background:#101113;color:#e4c571;font:18px system-ui"><h1>Helix synthetic PC sender</h1><p>Keep this page visible on your PC. No desktop, camera or microphone capture. Stops after two minutes.</p><video autoplay muted playsinline style="width:640px;max-width:100%"></video><p id="status">Ready</p><button id="start">Start sender</button><button id="stop">Stop</button><script>
 const ticket=location.hash.slice(1); history.replaceState(null,'',location.pathname);
-let stop=()=>{}; document.getElementById('start').onclick=()=>{stop();stop=(${remoteProbeClient.toString()})(document.querySelector('video'),s=>document.getElementById('status').textContent=s,{},location.origin,ticket,true);};
+let stop=()=>{}; document.getElementById('start').onclick=()=>{stop();stop=(${browserSource(remoteProbeClient)})(document.querySelector('video'),s=>document.getElementById('status').textContent=s,{},location.origin,ticket,true);};
 document.getElementById('stop').onclick=()=>{stop();document.getElementById('status').textContent='Stopped';};window.addEventListener('pagehide',()=>stop());
 </script></body></html>`;
 }

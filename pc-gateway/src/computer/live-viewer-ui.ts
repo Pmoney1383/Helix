@@ -1,3 +1,5 @@
+import { browserSource } from "./browser-source.js";
+
 /** Independent spectator UI. Never calls input tools or extends the control lease. */
 function liveViewerClient(options: { panel: boolean }): void {
   /** Panel mode: opened by the user as a thread tab, watches whatever control session exists, owns the stream. */
@@ -371,10 +373,8 @@ function liveViewerClient(options: { panel: boolean }): void {
   if (panel) setState('idle', 'No desktop control is running. Waiting…');
 }
 
-// The client is shipped as its own source text. Under tsx (tests, `npm run dev`) esbuild's keepNames adds calls to a `__name`
-// helper inside it that does not exist in the page, so the page defines a no-op one.
 export function liveViewerHtml(options: { panel?: boolean } = {}): string {
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
   *{box-sizing:border-box}html,body{margin:0;background:transparent}main{position:relative;${options.panel ? 'min-height:200px;' : ''}max-width:${options.panel ? 960 : 640}px;margin:auto;overflow:hidden;border:1px solid #b79748;border-radius:12px;background:#0b0b0b}video,canvas{display:block;width:100%;aspect-ratio:16/9;object-fit:contain}canvas[hidden]{display:none}#status{position:absolute;inset:0;display:grid;place-items:center;color:#e4c777;font:14px system-ui;padding:16px;text-align:center;pointer-events:none;overflow:auto;overflow-wrap:anywhere}#status[hidden]{display:none}#popout{position:absolute;top:8px;right:8px;z-index:2;border:1px solid #b79748;border-radius:8px;padding:6px 10px;background:#0b0b0bcc;color:#e4c777;font:13px system-ui;cursor:pointer}#popout[hidden]{display:none}#popout:focus-visible{outline:2px solid #fff;outline-offset:2px}
-  </style></head><body><main><video autoplay muted playsinline aria-label="Helix live desktop"></video><canvas hidden role="img" aria-label="Helix compatibility stream"></canvas><div id="status">Connecting live desktop…</div><button id="popout" hidden aria-label="Pop the live desktop out into a floating window">Pop out</button></main><script>var __name=function(f){return f};(${liveViewerClient.toString()})(${JSON.stringify({ panel: !!options.panel })});</script></body></html>`;
+  </style></head><body><main><video autoplay muted playsinline aria-label="Helix live desktop"></video><canvas hidden role="img" aria-label="Helix compatibility stream"></canvas><div id="status">Connecting live desktop…</div><button id="popout" hidden aria-label="Pop the live desktop out into a floating window">Pop out</button></main><script>(${browserSource(liveViewerClient)})(${JSON.stringify({ panel: !!options.panel })});</script></body></html>`;
 }

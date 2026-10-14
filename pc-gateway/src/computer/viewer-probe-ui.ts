@@ -1,3 +1,4 @@
+import { browserSource } from "./browser-source.js";
 import { remoteProbeClient } from "./viewer-remote.js";
 /** Self-contained browser code, serialized after TypeScript compilation; no external scripts. */
 function viewerProbeClient(): void {
@@ -197,5 +198,5 @@ export function viewerProbeHtml(): string {
 <div id="sender-help" hidden><p>Copy this private, temporary link into a browser on your PC (not your phone). Press Start sender there. Keep that page visible alongside this viewer. Do not share the link.</p><input id="sender" readonly aria-label="Private PC sender link" style="width:100%" onclick="this.select()"></div>
 <p>Generated animation only; this does not show your desktop yet. Keep the PC sender visible in a separate window or on your second monitor, and leave this card visible too. Chrome slows hidden tabs. The remote test ends after two minutes. RTT is not desktop end-to-end latency.</p>
 <details><summary>Diagnostic results</summary><textarea id="report" readonly aria-label="Diagnostic results"></textarea><button id="copy">Copy results</button></details>
-</main><script>window.helixRemote=(${remoteProbeClient.toString()});(${viewerProbeClient.toString()})();</script></body></html>`;
+</main><script>window.helixRemote=(${browserSource(remoteProbeClient)});(${browserSource(viewerProbeClient)})();</script></body></html>`;
 }
