@@ -420,8 +420,40 @@ export class RouterService {
     }
   }
 
+  /**
+   * The session a ref points at, as a stable key (`<provider>:<id>`, or `helix:<id>` before its first turn), with its title.
+   * Used to scope trust grants, so an alias or a Helix id and the provider key of the same session count as one target.
+   */
+  targetKey(ref: string): { key: string; title: string } {
+    const { session } = this.summary(ref);
+    const key = session.ref.endsWith(":undefined") || session.ref.endsWith(":") ? `helix:${session.helixSessionId}` : session.ref;
+    return { key, title: session.title };
+  }
+
+  /**
+   * The checks `sendTo` would fail on (busy, the General Claude, too heavy), without adopting or sending anything. Lets a caller
+   * that must ask the user first surface these errors before the user is bothered, instead of after.
+   */
+  precheckSend(ref: string, confirmHeavy = false): void {
+    const resolved = this.resolveRef(ref);
+    const helix = UUID.test(resolved) ? this.manager.registry.get(resolved) : undefined;
+    if (helix) {
+      if (helix.role === "router") throw new GatewayError(400, "that is the General Claude, not a work session; connect with start/resume tools instead");
+      if (this.manager.isRunning(helix.id)) {
+        throw new GatewayError(409, `"${helix.title}" is in the middle of a task. Wait for it to finish, or ask the user to interrupt it first.`, { sessionId: helix.id });
+      }
+      const heavy = confirmHeavy ? undefined : this.manager.heavyCheck(helix);
+      if (heavy) throw heavyError(heavy.contextTokens, heavy.reason, { sessionId: helix.id });
+      return;
+    }
+    const [provider, id] = splitKey(resolved);
+    if (!provider || !id) throw new GatewayError(404, `no session matches "${ref}"`);
+    const heavy = confirmHeavy || provider !== "claude" ? undefined : this.manager.heavyCheckTranscript(id);
+    if (heavy) throw heavyError(heavy.contextTokens, heavy.reason, { sessionRef: `claude:${id}` });
+  }
+
   /** Deliver straight into a Claude session that is open in a terminal. Undefined when there is none, so the caller can fall back. */
-  private async sendToTerminal(ref: string, text: string, confirmHeavy = false) {
+  private async sendToTerminal(ref: string, text: string, confirmHeavy = false, preApproved = false) {
     if (!this.indexer) return undefined;
     const [provider, id] = splitKey(this.resolveRef(ref));
     if (provider !== "claude" || !id) return undefined;
@@ -443,6 +475,12 @@ export class RouterService {
     // A terminal in bypass-permissions mode holds outside messages for approval in that terminal, which is no use when the
     // user is away. Ask on their phone instead, and only then deliver as an approved sender.
     const bypass = permissionModeOf(this.indexer.homes().claudeHome, info.id) === "bypassPermissions";
+    // Already approved by the user (or covered by their trust grant): deliver as an approved sender, without asking twice.
+    if (bypass && preApproved) {
+      const sent = await this.deliverToPeer(target.socketPath, peerLines(target, text, "Helix", { bypass: true }));
+      if (!sent.ok) throw new GatewayError(502, `could not reach the terminal session "${info.title}": ${sent.error ?? "unknown error"}`);
+      return base;
+    }
     if (bypass && this.approveTerminalSend) {
       const summary = `Send a message to the open terminal session "${info.title}" (it runs with permissions bypassed):\n${text.slice(0, 600)}`;
       void this.approveTerminalSend(summary).then(async (approved) => {
@@ -468,9 +506,9 @@ export class RouterService {
    * Adopts the session if needed, refuses a busy one, and goes through the same heavy-session guard as the phone.
    * The reply is not awaited: read it with `summary`.
    */
-  async sendTo(ref: string, text: string, opts: { mode?: AdoptMode; confirmHeavy?: boolean } = {}) {
+  async sendTo(ref: string, text: string, opts: { mode?: AdoptMode; confirmHeavy?: boolean; preApproved?: boolean } = {}) {
     // A session that is open in a terminal has an inbox: talk to the very same session instead of forking a copy of it.
-    const live = await this.sendToTerminal(ref, text, opts.confirmHeavy === true);
+    const live = await this.sendToTerminal(ref, text, opts.confirmHeavy === true, opts.preApproved === true);
     if (live) return live;
     const { session, mode, note } = await this.resolveTarget({ session: ref, mode: opts.mode });
     if (session.role === "router") throw new GatewayError(400, "that is the General Claude, not a work session; connect with start/resume tools instead");
@@ -509,6 +547,15 @@ export class RouterService {
   deleteAlias(name: string): boolean {
     return this.db.prepare("DELETE FROM aliases WHERE name = ?").run(name.trim()).changes === 1;
   }
+}
+
+function heavyError(contextTokens: number, reason: string, details: Record<string, unknown>): GatewayError {
+  return new GatewayError(
+    409,
+    `That session holds about ${Math.round(contextTokens / 1000)}k tokens and ${reason === "fork" ? "branching it" : "its cache has expired, so a message"} re-reads all of that at full price against your usage. ` +
+      `Ask the user first, or send again with confirmHeavy to continue anyway.`,
+    { code: "heavy_session", contextTokens, reason, ...details }
+  );
 }
 
 function splitKey(ref: string): [ProviderName | undefined, string | undefined] {

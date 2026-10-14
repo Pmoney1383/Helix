@@ -375,4 +375,25 @@ export const migrations: { version: number; sql: string }[] = [
       CREATE INDEX idx_device_request_nonces_expiry ON device_request_nonces(expires_at_ms);
     `,
   },
+  {
+    version: 16,
+    sql: `
+      -- An approval may offer to trust its requester for a while (hosted chat -> one agent session); JSON, see permissions/trust-grants.ts.
+      ALTER TABLE approvals ADD COLUMN trust_offer TEXT;
+      -- Time-limited permission for one hosted connector to message one agent session without asking each time.
+      CREATE TABLE trust_grants (
+        id             TEXT PRIMARY KEY,
+        connector_id   TEXT NOT NULL,
+        connector_name TEXT NOT NULL,
+        target         TEXT NOT NULL,
+        target_title   TEXT NOT NULL,
+        created_at     TEXT NOT NULL,
+        expires_at     TEXT NOT NULL,
+        revoked_at     TEXT,
+        granted_by     TEXT,
+        approval_id    TEXT
+      );
+      CREATE INDEX idx_trust_grants_lookup ON trust_grants(connector_id, target);
+    `,
+  },
 ];

@@ -68,6 +68,9 @@ data class Approval(
     val createdAt: Instant,
     val expiresAt: Instant,
     val resolvedAt: Instant? = null,
+    /** When set, this approval can also trust its requester with `trustTargetTitle` for up to this many minutes. */
+    val trustMaxMinutes: Int? = null,
+    val trustTargetTitle: String? = null,
 )
 
 @Serializable

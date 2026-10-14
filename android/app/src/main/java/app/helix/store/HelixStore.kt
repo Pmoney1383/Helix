@@ -774,6 +774,7 @@ class HelixStore(private val context: Context, private val notifier: Notifier) {
     private fun mapApproval(dto: ApprovalDTO) = Approval(
         id = dto.id, sessionTitle = dto.sessionId?.let { sessionTitlesByID[it] }, tool = dto.tool, summary = dto.summary,
         reasons = dto.reasons, status = dto.status, createdAt = dto.createdAt, expiresAt = dto.expiresAt, resolvedAt = dto.resolvedAt,
+        trustMaxMinutes = dto.trust?.maxMinutes, trustTargetTitle = dto.trust?.targetTitle,
     )
 
     // MARK: Derived
@@ -796,21 +797,21 @@ class HelixStore(private val context: Context, private val notifier: Notifier) {
     // MARK: Approvals
 
     /** Approving needs the fingerprint or screen lock, as on the iPhone. Rejecting never does. */
-    fun approveWithAuth(id: String) {
+    fun approveWithAuth(id: String, trustForMin: Int? = null) {
         val activity = activity?.get() ?: return
-        scope.launch { if (DeviceAuth.confirm(activity, "Approve this request")) approve(id) }
+        scope.launch { if (DeviceAuth.confirm(activity, if (trustForMin == null) "Approve this request" else "Approve and trust")) resolve(id, ApprovalStatus.Approved, trustForMin) }
     }
 
     fun approve(id: String) = resolve(id, ApprovalStatus.Approved)
     fun reject(id: String) = resolve(id, ApprovalStatus.Rejected)
 
-    private fun resolve(id: String, status: ApprovalStatus) {
+    private fun resolve(id: String, status: ApprovalStatus, trustForMin: Int? = null) {
         if (approvals.none { it.id == id && it.status == ApprovalStatus.Pending }) return
         // Update now so the tap feels instant; the real call corrects it if someone else already resolved it.
         approvals = approvals.map { if (it.id == id) it.copy(status = status, resolvedAt = Instant.now()) else it }
         notifier.cancelApproval(id)
         if (!approvalsAreLive) return
-        scope.launch { runCatching { client.resolveApproval(id, status == ApprovalStatus.Approved) }.getOrNull()?.let(::applyApproval) }
+        scope.launch { runCatching { client.resolveApproval(id, status == ApprovalStatus.Approved, trustForMin) }.getOrNull()?.let(::applyApproval) }
     }
 
     // MARK: Chat

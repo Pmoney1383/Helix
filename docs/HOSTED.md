@@ -10,7 +10,7 @@ tool implementation Helix uses locally. It uses its own scope, `pc.hosted`, and 
 | All observe tools: PC/GPU status, processes, services, `read_file`, `tail_file`, `list_directory`, git status/log, training status, agent sessions, `send_user_message` | Deleting anything, writing files, redirecting output into a file |
 | `run_safe_command`: one short, single-line PowerShell command that passes the safety rules | Installs, `git push/commit/...`, network fetches, starting/stopping processes or services, registry/system changes, other interpreters, encoded or dynamic commands |
 | `list_apps`, `open_app`: launch a Start-menu app by name ("Xbox", "Discord", "Calculator"); the name is matched against the installed list in code and never reaches a shell | Opening shells and admin tools (PowerShell, cmd, Terminal, Registry Editor, Task Manager, Services, ...) or anything not in the Start menu |
-| `search_agent_sessions`, `read_agent_session`, `send_agent_message`: find any Claude/Codex session on the PC, read how it is going, and send it a message as if you typed it (returns at once; read the reply with `read_agent_session`). A session open in a terminal gets the message directly in that same session (its own Claude reads it at the next tool round, or starts a turn if idle), with no fork; if that terminal runs in bypass-permissions mode, Claude Code would hold the message for approval at the terminal, so Helix asks on your phone instead and delivers once you approve (the message is then marked as approved). Sessions not open anywhere are resumed. A session over ~150k tokens, or one whose cache went cold, is refused until the user confirms (`confirmHeavy`) | Messaging a session that is mid-task, or the General Claude itself. The agent still asks you on your phone before anything destructive. Messages are labelled as sent from a hosted chat and audited |
+| `search_agent_sessions`, `read_agent_session`, `send_agent_message`: find any Claude/Codex session on the PC, read how it is going, and send it a message as if you typed it (returns at once; read the reply with `read_agent_session`). **Every message waits for your approval on the phone**: the gateway asks, showing the full text and the target session, and delivers only once you approve (the model cannot skip or answer this). Approving with "trust for 30 min / 2 h / 8 h" (`trustForMin`) lets that one chat message that one session without asking until then; see "Trusting a chat with a session" below. A session open in a terminal gets the message directly in that same session (its own Claude reads it at the next tool round, or starts a turn if idle), with no fork; for a bypass-permissions terminal your approval also covers the terminal's own hold (the message is marked as approved). Sessions not open anywhere are resumed. A session over ~150k tokens, or one whose cache went cold, is refused until the user confirms (`confirmHeavy`); that check happens before you are asked | Messaging a session that is mid-task, or the General Claude itself. Delivering anything without your approval or a live trust grant. The agent still asks you on your phone before anything destructive. Messages are labelled as sent from a hosted chat and audited |
 | `notify_user`: push a notification to your phone ("training finished", "your build failed"). `info` stays in the app, `important` pushes; `critical` is capped at a push and never rings. At most 10 per connector per 10 minutes | Ringing the phone, approval requests |
 | `close_app`: ask an open app to close (the same as clicking its X, so unsaved-work prompts still appear) | Force-killing anything. Never closed: shells and terminals, editors that host agent sessions (Cursor, VS Code, ...), system processes, the Helix gateway, Tailscale, `node`, `claude`, `codex`. Lists live in `src/mcp/app-tools.ts` |
 | | Reading credentials: `.env`, keys (`.p8`, `.pem`, `.ssh`), tokens, `~/.helix`, Helix's data folder and database, environment secrets |
@@ -23,8 +23,24 @@ you are logged in to Windows; otherwise the tool says the helper did not answer.
 one Windows lists before launching it. `HELIX_DESKTOP_BRIDGE=task` forces this path when testing from a normal terminal.
 
 "Safe" is decided in `src/permissions/hosted-safety.ts`: the destructive/opaque classifier first, then extra hosted-only
-rules. Hosted callers get **no approval prompts**; a refusal explains why and the chat is told to ask you to do it from
+rules. Hosted commands get **no approval prompts**; a refusal explains why and the chat is told to ask you to do it from
 the Helix app. Every call (and every refusal) is audited. To widen what is allowed, edit that one file and its tests.
+The one exception is `send_agent_message`, which always asks you first (below).
+
+## Trusting a chat with a session
+
+A message from a hosted chat makes an agent act as if you typed it, and the chat itself can be steered by whatever it
+reads (a web page, a file it was shown). So the gateway asks you about every such message; it does not depend on the
+model asking. To save the taps during real back-and-forth work, approve with trust:
+
+- **On the phone:** `POST /v1/approvals/:id/approve {"trustForMin": 30 | 120 | 480}` on an approval that has a `trust`
+  field (only hosted chat messages offer it). That chat may then message that one session without asking until the time
+  runs out (8 hours at most). A different chat, or a different session, still asks. The Android app shows
+  **Approve & trust** buttons for these.
+- **On the PC:** `npm run hosted -- trust <approval-id> [--min 120]` does the same from an approval the chat already asked
+  for. `npm run hosted -- trust list`, `trust revoke <grant-id>`, `trust revoke --all`.
+- `GET /v1/trust-grants` lists live grants and `DELETE /v1/trust-grants/:id` ends one. Revoking a chat's credentials
+  (`npm run hosted -- revoke`) ends its grants too. A replayed approval never creates a grant.
 
 ## Credentials
 

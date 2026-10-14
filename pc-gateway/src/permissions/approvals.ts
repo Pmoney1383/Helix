@@ -3,14 +3,23 @@ import type { Db } from "../storage/sqlite.js";
 import type { Approval, ApprovalStatus } from "../types.js";
 import type { EventBus } from "../sessions/manager.js";
 import type { MessageStore } from "../sessions/registry.js";
+import type { TrustOffer } from "./trust-grants.js";
 
 interface Row {
   id: string; session_id: string | null; source: Approval["source"]; tool: string; summary: string;
   reasons: string; status: ApprovalStatus; created_at: string; expires_at: string;
-  resolved_at: string | null; resolved_by: string | null; note: string | null;
+  resolved_at: string | null; resolved_by: string | null; note: string | null; trust_offer: string | null;
 }
 
-const toApproval = (r: Row): Approval => ({
+const toApproval = (r: Row): Approval => {
+  const offer = r.trust_offer ? (JSON.parse(r.trust_offer) as TrustOffer) : undefined;
+  return {
+    ...baseApproval(r),
+    ...(offer ? { trust: { connectorName: offer.connectorName, target: offer.target, targetTitle: offer.targetTitle, maxMinutes: offer.maxMinutes } } : {}),
+  };
+};
+
+const baseApproval = (r: Row): Approval => ({
   id: r.id,
   sessionId: r.session_id ?? undefined,
   source: r.source,
@@ -33,6 +42,8 @@ export interface ApprovalRequest {
   reasons?: string[];
   /** Aborting (agent turn interrupted, MCP call cancelled) withdraws the request. */
   signal?: AbortSignal;
+  /** Approving may also create a time-limited trust grant for this requester and target (see trustOffer). */
+  trustOffer?: TrustOffer;
 }
 
 export interface ApprovalOutcome {
@@ -73,10 +84,11 @@ export class ApprovalService {
     const expiresAt = new Date(now.getTime() + this.ttlMs).toISOString();
     this.db
       .prepare(
-        `INSERT INTO approvals (id, session_id, source, tool, summary, reasons, status, created_at, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`
+        `INSERT INTO approvals (id, session_id, source, tool, summary, reasons, status, created_at, expires_at, trust_offer)
+         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`
       )
-      .run(id, req.sessionId ?? null, req.source, req.tool, req.summary, JSON.stringify(req.reasons ?? []), now.toISOString(), expiresAt);
+      .run(id, req.sessionId ?? null, req.source, req.tool, req.summary, JSON.stringify(req.reasons ?? []), now.toISOString(), expiresAt,
+        req.trustOffer ? JSON.stringify(req.trustOffer) : null);
     const approval = this.mustGet(id);
 
     const outcome = new Promise<ApprovalOutcome>((resolve) => {
@@ -113,6 +125,12 @@ export class ApprovalService {
   get(id: string): Approval | undefined {
     const r = this.db.prepare("SELECT * FROM approvals WHERE id = ?").get(id) as Row | undefined;
     return r && toApproval(r);
+  }
+
+  /** The full trust offer (including the connector id, which the phone never needs to see), for creating a grant. */
+  trustOffer(id: string): TrustOffer | undefined {
+    const r = this.db.prepare("SELECT trust_offer FROM approvals WHERE id = ?").get(id) as { trust_offer: string | null } | undefined;
+    return r?.trust_offer ? (JSON.parse(r.trust_offer) as TrustOffer) : undefined;
   }
 
   list(status?: ApprovalStatus, limit = 100): Approval[] {

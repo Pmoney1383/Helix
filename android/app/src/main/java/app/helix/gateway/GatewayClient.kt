@@ -164,8 +164,10 @@ class GatewayClient(private val session: GatewaySession, val http: OkHttpClient 
         send<Approvals>("GET", "/v1/approvals", query = listOfNotNull("limit" to "$limit", status?.let { "status" to it.name.lowercase() })).approvals
 
     /** Settles once: resolving an already-resolved approval just returns its current state. */
-    suspend fun resolveApproval(id: String, approve: Boolean): ApprovalDTO =
-        send("POST", "/v1/approvals/$id/${if (approve) "approve" else "reject"}", body = "{}")
+    /** `trustForMin` (approve only): also trust the requester for that long, where the approval offers it. */
+    suspend fun resolveApproval(id: String, approve: Boolean, trustForMin: Int? = null): ApprovalDTO =
+        send("POST", "/v1/approvals/$id/${if (approve) "approve" else "reject"}",
+            body = if (approve && trustForMin != null) "{\"trustForMin\":$trustForMin}" else "{}")
 
     // MARK: Routes - the General Claude / Astra front doors
 

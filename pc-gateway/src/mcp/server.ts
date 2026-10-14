@@ -16,6 +16,7 @@ import type { PolicyEngine } from "../permissions/policy.js";
 import { GatewayError, type EventBus } from "../sessions/manager.js";
 import type { MessageStore, SessionRegistry } from "../sessions/registry.js";
 import { hostedCommandVerdict, isProtectedPath } from "../permissions/hosted-safety.js";
+import { MAX_TRUST_MINUTES, type TrustGrants } from "../permissions/trust-grants.js";
 import * as apps from "./app-tools.js";
 import * as pc from "./pc-tools.js";
 import { type McpContext, type ToolName, scopeAllows } from "./scopes.js";
@@ -41,6 +42,8 @@ export interface McpDeps {
   dataDir?: string;
   /** Public address of this gateway (HELIX_PUBLIC_URL), used in OAuth discovery. */
   publicUrl?: string;
+  /** Owner-granted, time-limited trust for hosted chats messaging agent sessions. */
+  trust?: TrustGrants;
 }
 
 type Result = { content: { type: "text"; text: string }[]; isError?: boolean };
@@ -76,6 +79,56 @@ export function createMcpServer(ctx: McpContext, deps: McpDeps): McpServer {
 
   /** Hosted callers cannot reach credentials or Helix's own state, even through the read-only tools. */
   const hosted = ctx.scope === "pc.hosted";
+
+  /** A failed send as a tool error, with what the model needs to retry correctly. */
+  const sendError = (err: unknown): Result => {
+    if (!(err instanceof GatewayError)) throw err;
+    const d = err.details ?? {};
+    return fail(`${err.message}${d.contextTokens ? ` (context ${d.contextTokens} tokens)` : ""}${d.sessionId ? ` [Helix sessionId: ${d.sessionId}]` : ""}`);
+  };
+
+  /** send_agent_message for a hosted chat: delivered only with the user's approval or under a live trust grant. */
+  async function hostedSend(session: string, message: string, text: string, confirmHeavy?: boolean): Promise<Result> {
+    const connectorId = ctx.desktopIdentity ?? ctx.actor;
+    const connectorName = ctx.actor.replace(/^local:(hosted:)?(oauth:)?/, "") || "a hosted chat";
+    let target: { key: string; title: string };
+    try {
+      target = deps.router.targetKey(session);
+      // Busy, too large, or not a work session: say so now, before the user is asked about a message that could not be delivered.
+      deps.router.precheckSend(session, confirmHeavy);
+    } catch (err) { return sendError(err); }
+
+    const grant = deps.trust?.active(connectorId, target.key);
+    if (grant) {
+      deps.auth.audit(undefined, "hosted.message_trusted", { actor: ctx.actor, target: target.key, grantId: grant.id });
+      try {
+        const r = await deps.router.sendTo(session, message, { confirmHeavy, preApproved: true });
+        return ok({ sent: true, trustedUntil: grant.expiresAt, title: target.title, ...("delivered" in r ? { delivered: "terminal", sessionRef: r.sessionRef } : { sessionId: r.session.id }), next: "read_agent_session to see the reply" });
+      } catch (err) { return sendError(err); }
+    }
+
+    const { approval, outcome } = deps.approvals.request({
+      source: "request", tool: "send_agent_message",
+      summary: `${connectorName} wants to send a message to the agent session "${target.title}":\n${text.length > 1500 ? text.slice(0, 1500) + "…" : text}`,
+      reasons: ["a hosted chat is asking an agent on this PC to act"],
+      trustOffer: deps.trust ? { connectorId, connectorName, target: target.key, targetTitle: target.title, maxMinutes: MAX_TRUST_MINUTES } : undefined,
+    });
+    // The tool returns at once (hosts time out long calls); the message goes out the moment the user approves.
+    void outcome.then(async (r) => {
+      if (!r.approved) return;
+      try { await deps.router.sendTo(session, message, { confirmHeavy, preApproved: true }); }
+      catch (err) {
+        await deps.escalation.notify({
+          severity: "important", title: `Approved message to "${target.title}" was not delivered`,
+          body: err instanceof Error ? err.message : String(err), dedupeKey: `hosted-send-failed:${approval.id}`,
+        }).catch(() => undefined);
+      }
+    }).catch(() => undefined);
+    return ok({
+      sent: false, pendingApproval: true, approvalId: approval.id, title: target.title, sessionRef: target.key,
+      next: "The user was asked to approve this message on their phone; it is delivered the moment they approve. Tell them to check Helix, then use read_agent_session later to see the reply.",
+    });
+  }
   const guardPath = (p: string): void => {
     if (hosted && isProtectedPath(p, deps.dataDir)) throw new Error("That path holds credentials or Helix's own state and is not available to hosted chats.");
   };
@@ -114,7 +167,8 @@ export function createMcpServer(ctx: McpContext, deps: McpDeps): McpServer {
     "Send a message to a Claude/Codex agent session on this PC, as if the user had typed it, and return right away (read the reply with read_agent_session). " +
     "Only message an agent when the user asked you to. If the session is open in a terminal the message goes straight into that same session (no fork); otherwise it is brought under Helix control and continued. " +
     "If it answers that the session is large/expensive, tell the user the size and ask; retry with confirmHeavy=true ONLY after they say to continue, " +
-    "and reuse the Helix `sessionId` from the error so it is not forked again. The agent's own approval rules still apply.",
+    "and reuse the Helix `sessionId` from the error so it is not forked again. The agent's own approval rules still apply." +
+    (hosted ? " From this chat every message first waits for the user's approval on their phone (unless they trusted this chat with that session for a while); when the result says pendingApproval, tell them to check Helix." : ""),
     {
       session: z.string().min(1).max(100).describe("a `ref` like claude:<id>, a Helix session id, or an alias"),
       text: z.string().min(1).max(20_000),
@@ -122,8 +176,13 @@ export function createMcpServer(ctx: McpContext, deps: McpDeps): McpServer {
     },
     async ({ session, text, confirmHeavy }) => {
       if (ctx.sessionId && (deps.registry.get(session)?.id === ctx.sessionId)) return fail("An agent cannot message itself.");
+      const message = `(Sent from a hosted chat on the user's behalf)\n${text}`;
+      // A hosted chat reaches the PC from the internet, and a message makes an agent act as if the user typed it. So the gateway
+      // itself asks the user before every one (the model cannot skip or answer this), unless the user trusted this connector
+      // with this very session for a while.
+      if (hosted) return hostedSend(session, message, text, confirmHeavy);
       try {
-        const r = await deps.router.sendTo(session, `(Sent from a hosted chat on the user's behalf)\n${text}`, { confirmHeavy });
+        const r = await deps.router.sendTo(session, message, { confirmHeavy });
         if ("delivered" in r && r.delivered === "pending_approval") {
           return ok({ sent: false, pendingApproval: true, title: r.title, sessionRef: r.sessionRef, next: "That terminal runs with permissions bypassed, so the user was asked to approve this message on their phone. It is delivered the moment they approve; tell them to check Helix. read_agent_session with sessionRef later to see the reply." });
         }
@@ -131,13 +190,7 @@ export function createMcpServer(ctx: McpContext, deps: McpDeps): McpServer {
           return ok({ sent: true, delivered: "terminal", title: r.title, name: r.name, sessionRef: r.sessionRef, state: r.status, next: "The message went straight into the open terminal session (no fork). read_agent_session with sessionRef to see the reply." });
         }
         return ok({ sent: true, sessionId: r.session.id, title: r.session.title, mode: r.mode, note: r.note, next: "read_agent_session to see the reply" });
-      } catch (err) {
-        if (err instanceof GatewayError) {
-          const d = err.details ?? {};
-          return fail(`${err.message}${d.contextTokens ? ` (context ${d.contextTokens} tokens)` : ""}${d.sessionId ? ` [Helix sessionId: ${d.sessionId}]` : ""}`);
-        }
-        throw err;
-      }
+      } catch (err) { return sendError(err); }
     });
 
   tool("send_user_message", "Send a message to the user's phone (shows in the app).",

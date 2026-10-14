@@ -4,11 +4,14 @@
 //   npm run hosted -- code            one-time code to approve an OAuth connector (ChatGPT / Claude)
 //   npm run hosted -- list
 //   npm run hosted -- revoke <id>      |  revoke --all
+//   npm run hosted -- trust <approval-id> [--min 120]    trust that chat with that session (from an approval it asked)
+//   npm run hosted -- trust list       |  trust revoke <grant-id>  |  trust revoke --all
 //
 // The URL base comes from HELIX_PUBLIC_URL (e.g. https://my-pc.my-tailnet.ts.net); see docs/HOSTED.md.
 import { LocalTokenService } from "../auth/local-tokens.js";
 import { OAuthService } from "../oauth/oauth.js";
 import { loadConfig, loadDotEnv } from "../config.js";
+import { MAX_TRUST_MINUTES, TrustGrants, type TrustOffer } from "../permissions/trust-grants.js";
 import { openDb } from "../storage/sqlite.js";
 
 loadDotEnv();
@@ -16,6 +19,7 @@ const config = loadConfig();
 const db = openDb(config.dbPath);
 const tokens = new LocalTokenService(db);
 const oauth = new OAuthService(db, tokens);
+const trust = new TrustGrants(db);
 
 const [cmd, ...rest] = process.argv.slice(2);
 const flag = (name: string): string | undefined => {
@@ -48,12 +52,35 @@ if (cmd === "create") {
 } else if (cmd === "revoke") {
   if (rest.includes("--all")) {
     const n = tokens.list().filter((t) => t.scope === "pc.hosted" && !t.revoked).map((t) => tokens.revoke(t.id)).filter(Boolean).length;
-    console.log(`Revoked ${n} hosted credential(s) and ${oauth.revokeAll()} connector refresh token(s).`);
+    console.log(`Revoked ${n} hosted credential(s), ${oauth.revokeAll()} connector refresh token(s) and ${trust.revokeConnector()} trust grant(s).`);
   } else {
     const id = rest[0];
-    console.log(id && tokens.revoke(id) ? "Revoked." : "No such active credential.");
+    const revoked = !!id && tokens.revoke(id);
+    if (revoked) trust.revokeConnector(id); // a manual credential is its own connector
+    console.log(revoked ? "Revoked." : "No such active credential.");
+  }
+} else if (cmd === "trust") {
+  const [sub, arg] = rest;
+  if (sub === "list") {
+    const grants = trust.list();
+    if (!grants.length) console.log("No live trust grants.");
+    for (const g of grants) console.log(`${g.id}  ${g.connectorName} -> "${g.targetTitle}" (${g.target})  until ${g.expiresAt}`);
+  } else if (sub === "revoke") {
+    if (arg === "--all") console.log(`Ended ${trust.revokeConnector()} trust grant(s).`);
+    else console.log(arg && trust.revoke(arg) ? "Ended." : "No such live grant.");
+  } else if (sub) {
+    // `trust <approval-id>`: the chat asked to message a session and the user approved it (or is about to); trust it for a while.
+    const row = db.prepare("SELECT trust_offer FROM approvals WHERE id = ?").get(sub) as { trust_offer: string | null } | undefined;
+    const minutes = Number(flag("min") ?? 120);
+    if (!row?.trust_offer) { console.error("No approval with that id offers trust (only hosted chat messages to an agent do)."); process.exit(1); }
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > MAX_TRUST_MINUTES) { console.error(`--min must be 1 to ${MAX_TRUST_MINUTES}`); process.exit(1); }
+    const offer = JSON.parse(row.trust_offer) as TrustOffer;
+    const g = trust.grant({ ...offer, minutes, grantedBy: "cli", approvalId: sub });
+    console.log(`${offer.connectorName} may message "${offer.targetTitle}" without asking until ${g.expiresAt} (grant ${g.id}).`);
+  } else {
+    console.log("usage: npm run hosted -- trust <approval-id> [--min M] | trust list | trust revoke <grant-id> | trust revoke --all");
   }
 } else {
-  console.log("usage: npm run hosted -- create [--name N] [--days D | --never] | code | list | revoke <id> | revoke --all");
+  console.log("usage: npm run hosted -- create [--name N] [--days D | --never] | code | list | revoke <id> | revoke --all | trust ...");
 }
 db.close();

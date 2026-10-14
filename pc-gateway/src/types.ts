@@ -51,6 +51,8 @@ export interface Approval {
   resolvedAt?: string;
   resolvedBy?: string;
   note?: string;
+  /** Present when approving may also trust the requester for a while: approve with `trustForMin` (see permissions/trust-grants.ts). */
+  trust?: { connectorName: string; target: string; targetTitle: string; maxMinutes: number };
 }
 
 export type GatewayEvent =

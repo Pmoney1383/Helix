@@ -102,13 +102,24 @@ fun ApprovalsScreen(store: HelixStore, nav: Navigator) {
         ActionSheet(
             "Allow ${approval.sessionTitle ?: "the agent"} to continue?",
             "${approval.summary}. This can't be undone.",
-            listOf(
-                DialogButton("Approve", DialogButton.Role.Destructive) {
+            buildList {
+                add(DialogButton("Approve", DialogButton.Role.Destructive) {
                     store.approveWithAuth(approval.id)
                     haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                },
-                DialogButton("Cancel", DialogButton.Role.Cancel) {},
-            ),
+                })
+                // A hosted chat messaging an agent: optionally trust that chat with that session for a while.
+                val max = approval.trustMaxMinutes
+                if (max != null) {
+                    for ((minutes, label) in listOf(30 to "30 min", 120 to "2 h", 480 to "8 h")) {
+                        if (minutes > max) continue
+                        add(DialogButton("Approve & trust $label", DialogButton.Role.Destructive) {
+                            store.approveWithAuth(approval.id, trustForMin = minutes)
+                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        })
+                    }
+                }
+                add(DialogButton("Cancel", DialogButton.Role.Cancel) {})
+            },
             onDismiss = { confirming = null },
         )
     }

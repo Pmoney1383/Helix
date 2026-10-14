@@ -103,7 +103,13 @@ data class ApprovalDTO(
     val resolvedAt: WireInstant? = null,
     val resolvedBy: String? = null,
     val note: String? = null,
+    /** Present when approving may also trust the requester for a while (a hosted chat messaging one agent session). */
+    val trust: TrustOfferDTO? = null,
 )
+
+/** `Approval.trust` (permissions/trust-grants.ts). */
+@Serializable
+data class TrustOfferDTO(val connectorName: String, val target: String, val targetTitle: String, val maxMinutes: Int)
 
 /** `PresenceStatus` (notifications/presence.ts). */
 @Serializable

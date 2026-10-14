@@ -6,6 +6,7 @@ import { buildJobWatches } from "../monitoring/presets.js";
 import type { WatcherManager } from "../monitoring/watcher-manager.js";
 import { WatchInputSchema } from "../monitoring/watch-types.js";
 import type { ApprovalService } from "../permissions/approvals.js";
+import { MAX_TRUST_MINUTES, type TrustGrants } from "../permissions/trust-grants.js";
 import { getGpuStatus, getPcStatus } from "../mcp/pc-tools.js";
 import { adoptSession } from "../sessions/adopt.js";
 import type { SessionManager } from "../sessions/manager.js";
@@ -68,7 +69,11 @@ const approvalListQuery = z.object({
   status: z.enum(["pending", "approved", "rejected", "expired", "cancelled"]).optional(),
   limit: z.coerce.number().int().min(1).max(500).default(100),
 });
-const approvalDecisionBody = z.object({ note: z.string().max(500).optional() }).default({});
+const approvalDecisionBody = z.object({
+  note: z.string().max(500).optional(),
+  /** Approve AND trust the requester for this long (only where the approval offers it; capped at the offer's maxMinutes). */
+  trustForMin: z.number().int().min(1).max(MAX_TRUST_MINUTES).optional(),
+}).default({});
 
 const jobBody = z.object({
   name: z.string().min(1).max(100),
@@ -92,7 +97,8 @@ export function registerHttp(
   indexer?: SessionIndexer,
   local?: { localTokens: LocalTokenService; agentEvents: AgentEvents; presence: PresenceService },
   router?: RouterService,
-  comms?: { devices: DeviceTokens; calls: CallManager; push?: Notifier; apns?: ApnsClient; live?: LiveDevices; persona: PersonaService; tts?: TtsManager; clips?: ClipLibrary; callAudio?: CallAudio }
+  comms?: { devices: DeviceTokens; calls: CallManager; push?: Notifier; apns?: ApnsClient; live?: LiveDevices; persona: PersonaService; tts?: TtsManager; clips?: ClipLibrary; callAudio?: CallAudio },
+  trust?: TrustGrants
 ): void {
   const pairLimiter = new RateLimiter(5, 60_000);
   const enrollLimiter = new RateLimiter(5, 60_000);
@@ -196,12 +202,30 @@ export function registerHttp(
 
   for (const decision of ["approve", "reject"] as const) {
     app.post<{ Params: { id: string } }>(`/v1/approvals/:id/${decision}`, guard, async (req, reply) => {
-      const { note } = approvalDecisionBody.parse(req.body ?? {});
+      const { note, trustForMin } = approvalDecisionBody.parse(req.body ?? {});
+      const wasPending = approvals.get(req.params.id)?.status === "pending";
       const result = approvals.resolve(req.params.id, decision === "approve", req.device?.id, note);
       if (!result) return reply.code(404).send({ error: "approval not found" });
       auth.audit(req.device?.id, `approval.${decision}`, { approvalId: result.id, finalStatus: result.status });
+      // Trust is granted only by the call that actually approved it (never by a replay), and only where the approval offered it.
+      const offer = decision === "approve" && trustForMin && wasPending && result.status === "approved" ? approvals.trustOffer(result.id) : undefined;
+      if (offer && trust) {
+        const grant = trust.grant({ ...offer, minutes: Math.min(trustForMin!, offer.maxMinutes), grantedBy: req.device?.id, approvalId: result.id });
+        auth.audit(req.device?.id, "trust.grant", { grantId: grant.id, connector: offer.connectorName, target: offer.target, expiresAt: grant.expiresAt });
+        return { ...result, trustGrant: grant };
+      }
       // 200 with the settled state even for replays; `status` tells the client what actually happened.
       return result;
+    });
+  }
+
+  /* ---- time-limited trust: a hosted chat messaging one agent session without asking each time ---- */
+  if (trust) {
+    app.get("/v1/trust-grants", guard, async () => ({ grants: trust.list() }));
+    app.delete<{ Params: { id: string } }>("/v1/trust-grants/:id", guard, async (req, reply) => {
+      const revoked = trust.revoke(req.params.id);
+      auth.audit(req.device?.id, "trust.revoke", { grantId: req.params.id, revoked });
+      return revoked ? { revoked: true } : reply.code(404).send({ error: "grant not found or already ended" });
     });
   }
 

@@ -43,6 +43,7 @@ import { PersonaService } from "./persona/service.js";
 import { AgentTokens } from "./mcp/scopes.js";
 import { ApprovalService } from "./permissions/approvals.js";
 import { PolicyEngine } from "./permissions/policy.js";
+import { TrustGrants } from "./permissions/trust-grants.js";
 import type { AgentProvider } from "./providers/provider.js";
 import { EventBus, SessionManager } from "./sessions/manager.js";
 import { MessageStore, SessionRegistry } from "./sessions/registry.js";
@@ -103,6 +104,7 @@ export async function buildGateway(
   const auth = new AuthService(db, { requireSigning: config.requireDeviceSigning });
   const approvals = new ApprovalService(db, manager.bus, manager.messages, config.approvalTtlMs);
   const policy = new PolicyEngine(approvals);
+  const trust = new TrustGrants(db);
   manager.setPolicy(policy);
   manager.setUsage(new UsageStore(db));
   if (config.discovery) {
@@ -211,12 +213,12 @@ export async function buildGateway(
   const approvalEscalator = new ApprovalEscalator(manager.bus, escalation, { callAfterMs: config.approvalCallAfterMs });
   app.addHook("onClose", async () => { approvalEscalator.stop(); calls.stop(); apns?.close(); });
   const agentEvents = new AgentEvents(db, activity, registry, indexer, { approvals, presence, escalation });
-  registerHttp(app, auth, manager, approvals, watchers, indexer, { localTokens, agentEvents, presence }, router, { devices, calls, push, apns, live, persona, tts, clips, callAudio });
+  registerHttp(app, auth, manager, approvals, watchers, indexer, { localTokens, agentEvents, presence }, router, { devices, calls, push, apns, live, persona, tts, clips, callAudio }, trust);
   registerWebSocket(app, auth, manager, router, persona, live);
   const oauth = new OAuthService(db, localTokens);
   registerOAuth(app, oauth, config.publicUrl);
   registerMcp(app, (token) => agentTokens.lookup(token) ?? localTokens.lookup(token), {
-    auth, policy, approvals, registry: manager.registry, messages: manager.messages, bus: manager.bus, watchers, escalation, router, dataDir: config.dataDir, publicUrl: config.publicUrl, computer, viewerProbe, liveViewer, liveViewerCards: config.viewerCards ?? false, desktopApprovals: config.desktopApprovals ?? true,
+    auth, policy, approvals, trust, registry: manager.registry, messages: manager.messages, bus: manager.bus, watchers, escalation, router, dataDir: config.dataDir, publicUrl: config.publicUrl, computer, viewerProbe, liveViewer, liveViewerCards: config.viewerCards ?? false, desktopApprovals: config.desktopApprovals ?? true,
   });
 
   return {
