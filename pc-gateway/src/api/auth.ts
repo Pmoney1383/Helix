@@ -169,6 +169,12 @@ export function bearerToken(req: FastifyRequest): string | undefined {
   return h?.startsWith("Bearer ") ? h.slice(7).trim() : undefined;
 }
 
+/**
+ * Tailscale Funnel adds this to every request that arrived from the public internet rather than the tailnet. A caller
+ * can add it themselves, but that only ever puts them on the stricter, internet side.
+ */
+export const isPublicInternet = (req: FastifyRequest): boolean => req.headers["tailscale-funnel-request"] !== undefined;
+
 export function requireDevice(auth: AuthService, opts: { allowUnenrolled?: boolean } = {}) {
   return async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {
     const device = auth.authenticate(bearerToken(req));

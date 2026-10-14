@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { SessionIndexer } from "../discovery/indexer.js";
 import { buildJobWatches } from "../monitoring/presets.js";
@@ -302,8 +302,14 @@ export function registerHttp(
   /* ---- what hooks in terminal/IDE sessions report ---- */
   if (local) {
     const eventLimiter = new RateLimiter(300, 60_000);
-    app.post("/v1/agent-events", async (req, reply) => {
+    // Hooks and the idle helper use the PC's own agent token. A hosted connector's token is also a local token, but
+    // it must not report hook events, ask for approvals as a terminal session, or fake the user's presence.
+    const pcAgent = (req: FastifyRequest) => {
       const ctx = local.localTokens.lookup(bearerToken(req));
+      return ctx && ctx.scope !== "pc.hosted" ? ctx : undefined;
+    };
+    app.post("/v1/agent-events", async (req, reply) => {
+      const ctx = pcAgent(req);
       if (!ctx) return reply.code(401).send({ error: "unauthorized" });
       if (!eventLimiter.allow(ctx.tokenId)) return reply.code(429).send({ error: "too many events" });
       const body = z.object({
@@ -315,7 +321,7 @@ export function registerHttp(
     });
     // PreToolUse hooks ask here before a possibly destructive command runs. Blocks (long poll) while the user decides.
     app.post("/v1/agent-events/permission", async (req, reply) => {
-      const ctx = local.localTokens.lookup(bearerToken(req));
+      const ctx = pcAgent(req);
       if (!ctx) return reply.code(401).send({ error: "unauthorized" });
       const body = z.object({ provider: z.enum(["claude", "codex"]), payload: z.record(z.string(), z.unknown()) }).parse(req.body);
       const ac = new AbortController();
@@ -334,7 +340,7 @@ export function registerHttp(
     });
     // Reported every ~15 s by the helper running in the user's desktop session.
     app.post("/v1/presence/idle", async (req, reply) => {
-      if (!local.localTokens.lookup(bearerToken(req))) return reply.code(401).send({ error: "unauthorized" });
+      if (!pcAgent(req)) return reply.code(401).send({ error: "unauthorized" });
       const { idleSec } = z.object({ idleSec: z.number().min(0).max(31_536_000) }).parse(req.body);
       local.presence.reportIdle(idleSec);
       return reply.code(204).send();

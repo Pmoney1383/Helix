@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { RateLimiter as RL } from "../api/auth.js";
-import { RateLimiter } from "../api/auth.js";
+import { RateLimiter, isPublicInternet } from "../api/auth.js";
 import type { LocalTokenService } from "../auth/local-tokens.js";
 import type { Db } from "../storage/sqlite.js";
 
@@ -23,6 +23,8 @@ const AUTH_CODE_TTL_MS = 5 * 60_000;
 const ACCESS_TTL_MS = 60 * 60_000;
 const REFRESH_TTL_MS = 60 * 86_400_000;
 const REQUEST_TTL_MS = 10 * 60_000;
+const UNUSED_CLIENT_TTL_MS = 86_400_000;
+const MAX_UNUSED_CLIENTS = 100;
 
 export const SCOPE = "pc.hosted";
 
@@ -31,7 +33,11 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&
 export class OAuthService {
   /** Pending consent screens, keyed by an unguessable id, so the approval POST is bound to the request that was shown. */
   private readonly requests = new Map<string, { clientId: string; redirectUri: string; challenge: string; state?: string; expires: number }>();
-  /** Wrong codes across all clients: a ceiling on guessing, however many addresses the guesses come from. */
+  /**
+   * Wrong codes across all clients: a ceiling on guessing, however many addresses the guesses come from. Counted
+   * separately for the internet (Funnel) and the tailnet, so strangers burning the internet's allowance cannot lock the
+   * owner out when they approve from a device on their tailnet.
+   */
   private readonly wrongCodes = new RateLimiter(10, APPROVAL_CODE_TTL_MS);
 
   constructor(private readonly db: Db, private readonly tokens: LocalTokenService) {}
@@ -52,10 +58,27 @@ export class OAuthService {
 
   /* ---- clients ---- */
   registerClient(name: string, redirectUris: string[]): { clientId: string } {
+    this.pruneUnusedClients();
     const clientId = "hxc_" + randomUUID();
     this.db.prepare("INSERT INTO oauth_clients (client_id, name, redirect_uris, created_at) VALUES (?, ?, ?, ?)")
       .run(clientId, name, JSON.stringify(redirectUris), new Date().toISOString());
     return { clientId };
+  }
+
+  /**
+   * Registration is open to the internet (connectors register themselves), so registrations that never led to a
+   * sign-in are dropped after a day, and at most MAX_UNUSED_CLIENTS of them are kept. Connectors that ever got a
+   * token or desktop access are never touched.
+   */
+  private pruneUnusedClients(): void {
+    const unused = `NOT EXISTS (SELECT 1 FROM oauth_refresh_tokens r WHERE r.client_id = c.client_id)
+      AND NOT EXISTS (SELECT 1 FROM local_tokens t WHERE t.oauth_client_id = c.client_id)
+      AND NOT EXISTS (SELECT 1 FROM oauth_auth_codes a WHERE a.client_id = c.client_id)
+      AND c.desktop_allowed = 0`;
+    const cutoff = new Date(Date.now() - UNUSED_CLIENT_TTL_MS).toISOString();
+    this.db.prepare(`DELETE FROM oauth_clients WHERE client_id IN (SELECT c.client_id FROM oauth_clients c WHERE c.created_at < ? AND ${unused})`).run(cutoff);
+    this.db.prepare(`DELETE FROM oauth_clients WHERE client_id IN (SELECT c.client_id FROM oauth_clients c WHERE ${unused}
+      ORDER BY c.created_at DESC LIMIT -1 OFFSET ?)`).run(MAX_UNUSED_CLIENTS - 1);
   }
 
   client(clientId: string): { name: string; redirectUris: string[] } | undefined {
@@ -77,11 +100,11 @@ export class OAuthService {
   }
 
   /** Approve with the owner's code; returns the authorization code, or why not. */
-  approve(requestId: string, ownerCode: string): { code: string; redirectUri: string; state?: string } | "bad_request" | "bad_code" | "locked" {
+  approve(requestId: string, ownerCode: string, from: "internet" | "tailnet" = "tailnet"): { code: string; redirectUri: string; state?: string } | "bad_request" | "bad_code" | "locked" {
     const r = this.peekRequest(requestId);
     if (!r) return "bad_request";
-    if (!this.wrongCodes.peek("global")) return "locked";
-    if (!this.consumeApprovalCode(ownerCode)) { this.wrongCodes.allow("global"); return "bad_code"; }
+    if (!this.wrongCodes.peek(from)) return "locked";
+    if (!this.consumeApprovalCode(ownerCode)) { this.wrongCodes.allow(from); return "bad_code"; }
     this.requests.delete(requestId);
     const code = b64url(randomBytes(32));
     this.db.prepare("INSERT INTO oauth_auth_codes (code_hash, client_id, redirect_uri, code_challenge, expires_at) VALUES (?, ?, ?, ?, ?)")
@@ -164,6 +187,10 @@ const redirectOk = (u: string): boolean => {
 export function registerOAuth(app: FastifyInstance, oauth: OAuthService, publicUrl?: string): void {
   const ipLimiter: RL = new RateLimiter(10, 60_000);
   const registerLimiter: RL = new RateLimiter(20, 60_000);
+  // Behind Tailscale every request comes from loopback, so the address alone would make these limits shared by
+  // everyone. Keying by where the request came from keeps internet traffic from using up the tailnet's allowance.
+  const from = (req: FastifyRequest) => (isPublicInternet(req) ? "internet" : "tailnet");
+  const limitKey = (req: FastifyRequest) => `${from(req)}:${req.ip}`;
 
   // Discovery, registration and token exchange carry no ambient credentials, so browser-based clients may call them
   // cross-origin. (The consent page and /mcp are deliberately not opened up this way.)
@@ -209,7 +236,7 @@ export function registerOAuth(app: FastifyInstance, oauth: OAuthService, publicU
   app.get("/.well-known/oauth-protected-resource/*", async (req) => resource(req));
 
   app.post("/oauth/register", async (req, reply) => {
-    if (!registerLimiter.allow(req.ip)) return reply.code(429).send({ error: "too_many_requests" });
+    if (!registerLimiter.allow(limitKey(req))) return reply.code(429).send({ error: "too_many_requests" });
     const parsed = registerBody.safeParse(req.body);
     if (!parsed.success || !parsed.data.redirect_uris.every(redirectOk)) {
       return reply.code(400).send({ error: "invalid_redirect_uri", error_description: "redirect_uris must be https (or loopback http)" });
@@ -260,7 +287,7 @@ ${error ? `<p class="e">${esc(error)}</p>` : ""}
   });
 
   app.post("/oauth/authorize", async (req, reply) => {
-    if (!ipLimiter.allow(req.ip)) return reply.code(429).send({ error: "too_many_requests" });
+    if (!ipLimiter.allow(limitKey(req))) return reply.code(429).send({ error: "too_many_requests" });
     const b = (req.body ?? {}) as Record<string, string | undefined>;
     const requestId = b.req ?? "";
     const pending = oauth.peekRequest(requestId);
@@ -272,8 +299,12 @@ ${error ? `<p class="e">${esc(error)}</p>` : ""}
       return reply.redirect(u.toString(), 302);
     };
     if (b.decision === "deny") { oauth.deny(requestId); return back({ error: "access_denied" }, pending.state); }
-    const result = oauth.approve(requestId, b.code ?? "");
-    if (result === "locked") return fail(reply, "Too many wrong codes. Try again in a few minutes.");
+    const result = oauth.approve(requestId, b.code ?? "", from(req));
+    if (result === "locked") {
+      return fail(reply, from(req) === "internet"
+        ? "Too many wrong codes from the internet. Try again in a few minutes, or approve from a device connected to your Tailscale network."
+        : "Too many wrong codes. Try again in a few minutes.");
+    }
     if (result === "bad_request") return fail(reply, "This approval request expired. Start the connection again from the app.");
     if (result === "bad_code") return consent(reply, requestId, oauth.client(pending.clientId)?.name ?? "connector", pending.redirectUri, "That code is wrong, expired or already used.");
     // Where the browser is sent next, without the code or state, so a stalled connection can be diagnosed from the log.
@@ -284,7 +315,7 @@ ${error ? `<p class="e">${esc(error)}</p>` : ""}
 
   app.post("/oauth/token", async (req, reply) => {
     reply.header("cache-control", "no-store");
-    if (!ipLimiter.allow("token:" + req.ip)) return reply.code(429).send({ error: "too_many_requests" });
+    if (!ipLimiter.allow("token:" + limitKey(req))) return reply.code(429).send({ error: "too_many_requests" });
     const b = (req.body ?? {}) as Record<string, string | undefined>;
     const clientId = b.client_id ?? "";
     let r: TokenResult | { error: string };

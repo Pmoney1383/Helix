@@ -68,6 +68,8 @@ entered with `type_text`. Scrolling is in wheel notches, at the specified x/y: p
 - Optional `HELIX ACTIVE` label (off by default); short action pulse (on by default). No continuous animation.
 - The indicator remains visible between model tool calls. Input cannot start if creating the indicator or takeover hooks fails.
 - **Physical mouse/keyboard activity or Ctrl+Alt+Shift+F12 stops control.** This means touching the mouse while testing ends it.
+  The helper re-arms its input hooks every second, because Windows silently drops a low-level hook that once answers
+  too slowly (for example during a large capture); if re-arming fails, control stops.
 - Normal stop removes the windows synchronously; lock, disconnected Windows session, layout change, or missing overlay stops
   control on the helper's 100 ms check. The normal desktop is required; UAC/secure desktop and elevated targets are unsupported.
 - 120-second idle control lease, renewed by screenshots/actions; at most 1000 input requests per session. Start a new session

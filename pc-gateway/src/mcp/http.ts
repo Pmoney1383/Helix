@@ -1,14 +1,12 @@
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { RateLimiter, bearerToken } from "../api/auth.js";
+import { RateLimiter, bearerToken, isPublicInternet } from "../api/auth.js";
 import { baseUrl } from "../oauth/oauth.js";
 import { createMcpServer, type McpDeps } from "./server.js";
 import type { McpContext } from "./scopes.js";
 
 /** Public routes: MCP (including ticketed synthetic viewer diagnostics) and OAuth discovery. */
-const PUBLIC_PATHS = /^\/(mcp(\/|\?|$)|oauth\/|\.well-known\/)/;
-/** Tailscale Funnel adds this to every request that arrived from the public internet rather than the tailnet. */
-const isPublicInternet = (req: FastifyRequest): boolean => req.headers["tailscale-funnel-request"] !== undefined;
+export const PUBLIC_PATHS = /^\/(mcp(\/|\?|$)|oauth\/|\.well-known\/)/;
 
 /**
  * Stateless Streamable-HTTP MCP endpoint. A fresh server+transport per request keeps this simple;

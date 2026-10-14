@@ -101,8 +101,11 @@ https://<pc>.<tailnet>.ts.net/mcp
 3. Type that code on the consent page and press Approve. Only someone who can read the PC's terminal can approve, so a stranger who finds the URL cannot connect.
 4. The app gets a 1-hour access token plus a rotating refresh token (60 days) and renews silently. The scope is still only `pc.hosted`.
 
-Cut everything off with `npm run hosted -- revoke --all` (access and refresh tokens). Wrong codes are rate limited, and
-after 10 wrong codes in 10 minutes approval is locked for everyone until they age out.
+Cut everything off with `npm run hosted -- revoke --all` (access and refresh tokens). Wrong codes are rate limited:
+after 10 wrong codes in 10 minutes, approval is locked until they age out. The internet (Funnel) and your tailnet are
+counted separately, so strangers guessing from the internet cannot lock you out: if the page says "Too many wrong codes
+from the internet", approve from a device with Tailscale on. Registrations that never sign in are deleted after a day
+(at most 100 are kept), and the request log never contains `/mcp/t/<token>` or viewer tickets.
 
 The static URL/bearer tokens above still work for tools that do not need OAuth. Never paste them into screenshots.
 

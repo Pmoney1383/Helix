@@ -211,7 +211,7 @@ namespace HelixComputer {
     readonly System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer {Interval=100};
     NamedPipeServerStream pipe; bool authenticated,active,pulse,showLabel;
     string secret,layout="",stopReason="not started"; DateTime heartbeat=DateTime.UtcNow,lease=DateTime.MinValue,brightUntil=DateTime.MinValue;
-    IntPtr mouseHook,keyHook; Win.HookProc mouseProc,keyProc;
+    IntPtr mouseHook,keyHook; Win.HookProc mouseProc,keyProc; DateTime hooksArmed;
     readonly List<ushort> held=new List<ushort>(); bool leftHeld;
     ViewerCapture viewer; Rectangle viewerRegion; Action<string> notify; string viewerFailure="";
 
@@ -322,6 +322,7 @@ namespace HelixComputer {
       if(Layout(Monitors())!=layout){Stop("monitor layout changed");return;}
       if(overlays.Count==0){Stop("desktop indicator unavailable");return;}
       foreach(var o in overlays)if(o.IsDisposed||!o.Visible){Stop("desktop indicator unavailable");return;}
+      if((DateTime.UtcNow-hooksArmed).TotalSeconds>=1){try{ArmTakeover();}catch{Stop("takeover detection failed");return;}}
       if(brightUntil!=DateTime.MinValue&&DateTime.UtcNow>brightUntil){brightUntil=DateTime.MinValue;foreach(var o in overlays)o.PaintGold(false);}
     }
     string Start(bool label,bool animate) {
@@ -340,12 +341,24 @@ namespace HelixComputer {
           if(code>=0&&(Marshal.ReadInt32(l,8)&0x10)==0&&active)Stop("physical keyboard input; user took over");
           return Win.CallNextHookEx(IntPtr.Zero,code,w,l);
         };
-        var module=Win.GetModuleHandle(null);
-        mouseHook=Win.SetWindowsHookEx(14,mouseProc,module,0);keyHook=Win.SetWindowsHookEx(13,keyProc,module,0);
-        if(mouseHook==IntPtr.Zero||keyHook==IntPtr.Zero)throw new InvalidOperationException("Cannot install local takeover detection.");
+        ArmTakeover();
         active=true;lease=DateTime.UtcNow.AddSeconds(120);stopReason="";
         return current.id;
       } catch {Stop("indicator or takeover detection failed");throw;}
+    }
+    // Windows silently removes a low-level hook that once answers too slowly (this thread busy with a large capture),
+    // and physical input would then no longer stop control. Tick re-arms them every second, new ones before old ones go.
+    void ArmTakeover() {
+      var module=Win.GetModuleHandle(null);
+      var m=Win.SetWindowsHookEx(14,mouseProc,module,0);var k=Win.SetWindowsHookEx(13,keyProc,module,0);
+      if(m==IntPtr.Zero||k==IntPtr.Zero){
+        if(m!=IntPtr.Zero)Win.UnhookWindowsHookEx(m);
+        if(k!=IntPtr.Zero)Win.UnhookWindowsHookEx(k);
+        throw new InvalidOperationException("Cannot install local takeover detection.");
+      }
+      if(mouseHook!=IntPtr.Zero)Win.UnhookWindowsHookEx(mouseHook);
+      if(keyHook!=IntPtr.Zero)Win.UnhookWindowsHookEx(keyHook);
+      mouseHook=m;keyHook=k;hooksArmed=DateTime.UtcNow;
     }
     void Stop(string reason) {
       bool wasActive=active;

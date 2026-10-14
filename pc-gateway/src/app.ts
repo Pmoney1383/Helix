@@ -8,6 +8,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import websocket from "@fastify/websocket";
 import type { Config } from "./config.js";
 import { AuthService } from "./api/auth.js";
+import { requestLogFields } from "./api/log-redact.js";
 import { LocalTokenService } from "./auth/local-tokens.js";
 import { OAuthService, registerOAuth } from "./oauth/oauth.js";
 import { ClipLibrary } from "./voice/clips.js";
@@ -82,7 +83,8 @@ export async function buildGateway(
   providers: Partial<Record<ProviderName, AgentProvider>>
 ): Promise<Gateway> {
   const app = Fastify({
-    logger: { level: config.logLevel, redact: ["req.headers.authorization"] },
+    // Some credentials travel in the URL (/mcp/t/<token>, viewer tickets): the request log gets them cut out.
+    logger: { level: config.logLevel, redact: ["req.headers.authorization"], serializers: { req: requestLogFields } },
     bodyLimit: 1024 * 1024,
   });
   await app.register(websocket, { options: { maxPayload: 1024 * 1024 } });
