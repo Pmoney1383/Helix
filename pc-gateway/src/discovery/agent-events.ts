@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { Escalation } from "../notifications/escalation.js";
 import type { PresenceService } from "../notifications/presence.js";
-import { classify, describeAction } from "../permissions/classifier.js";
+import { classify, describeAction, sensitiveChange } from "../permissions/classifier.js";
 import type { ApprovalService } from "../permissions/approvals.js";
 import type { SessionActivity, SessionRef } from "../monitoring/session-activity.js";
 import type { SessionRegistry } from "../sessions/registry.js";
@@ -64,17 +64,25 @@ export class AgentEvents {
     const none = (why: string): PermissionDecision => { this.record(input.provider, "pretooluse", sid, cwd, tool, `no opinion: ${why}`); return { decision: "none", reason: why }; };
     if (!this.gate) return none("permission gate not configured");
     if (!sid || !tool) return none("incomplete request");
-    if (this.registry.findByProviderId(input.provider, sid)) return none("managed by Helix");
-    if (!this.gate.presence.isAway()) return none("you are at the PC");
 
     const action = { tool, input: toolInput };
-    const c = classify(action);
-    if (!c.destructive) return none("not destructive");
+    let reasons: string[];
+    if (this.registry.findByProviderId(input.provider, sid)) {
+      // Sessions Helix runs have their own gate for everything else, but an edit there may skip it (the user's allow
+      // rules, acceptEdits). A sensitive file is checked here too, always: the approval answers both gates at once.
+      reasons = sensitiveChange(action);
+      if (!reasons.length) return none("managed by Helix");
+    } else {
+      if (!this.gate.presence.isAway()) return none("you are at the PC");
+      const c = classify(action);
+      if (!c.destructive) return none("not destructive and no sensitive file");
+      reasons = c.reasons;
+    }
 
     const project = cwd ? path.basename(cwd) : undefined;
     const summary = describeAction(action) + (project ? `  [${project}]` : "");
     const { approval, outcome } = this.gate.approvals.request({
-      source: "agent", tool, summary, reasons: c.reasons, signal: input.signal,
+      source: "agent", tool, summary, reasons, signal: input.signal,
     });
     // Getting the request to the user (message, push, and a call if it waits) is the approval escalator's job.
     const result = await outcome;

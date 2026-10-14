@@ -14,13 +14,14 @@ export interface HookSpec {
 
 /**
  * - Stop / Notification: a turn ended / Claude is waiting on the user.
- * - PreToolUse: the permission gate. Matched to shell and MCP tools only, so ordinary reads and edits never
- *   pay for it. Its timeout is long because it may wait for the user to answer on their phone.
+ * - PreToolUse: the permission gate. Matched to shell, MCP and file-editing tools; reads never pay for it, and an
+ *   ordinary edit is answered at once with "no opinion" (only sensitive files wait for the user; see
+ *   permissions/sensitive-paths.ts). Its timeout is long because it may wait for the user to answer on their phone.
  */
 export const DEFAULT_HOOKS: readonly HookSpec[] = [
   { event: "Stop", timeoutSec: 10 },
   { event: "Notification", timeoutSec: 10 },
-  { event: "PreToolUse", matcher: "Bash|PowerShell|mcp__.*", timeoutSec: 1900 },
+  { event: "PreToolUse", matcher: "Bash|PowerShell|Write|Edit|MultiEdit|NotebookEdit|mcp__.*", timeoutSec: 1900 },
 ];
 
 interface HookCommand { type: string; command: string; timeout?: number; [k: string]: unknown }

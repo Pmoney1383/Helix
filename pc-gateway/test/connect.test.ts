@@ -53,7 +53,7 @@ describe("hooks config", () => {
     assert.equal(m.hooks!.PreToolUse!.length, 2, "user's PreToolUse audit hook kept, ours added beside it");
     assert.deepEqual(m.hooks!.PreToolUse![0], existing.hooks.PreToolUse[0], "the user's own group is untouched");
     const gate = m.hooks!.PreToolUse![1]!;
-    assert.equal(gate.matcher, "Bash|PowerShell|mcp__.*", "the permission gate only runs for shell and MCP tools");
+    assert.equal(gate.matcher, "Bash|PowerShell|Write|Edit|MultiEdit|NotebookEdit|mcp__.*", "the permission gate runs for shell, edit and MCP tools, never for reads");
     assert.equal(gate.hooks![0]!.timeout, 1900, "long enough to wait for an answer from the phone");
     assert.equal(m.hooks!.Stop![1]!.hooks![0]!.timeout, 10);
     assert.deepEqual(installedHookEvents(m).sort(), ["Notification", "PreToolUse", "Stop"]);
@@ -135,7 +135,7 @@ describe("connect / disconnect", () => {
     assert.equal(settings.hooks.Stop[1].hooks[0].timeout, 10);
 
     assert.equal(settings.hooks.PreToolUse.length, 1, "permission gate installed");
-    assert.equal(settings.hooks.PreToolUse[0].matcher, "Bash|PowerShell|mcp__.*");
+    assert.equal(settings.hooks.PreToolUse[0].matcher, "Bash|PowerShell|Write|Edit|MultiEdit|NotebookEdit|mcp__.*");
     assert.match(settings.hooks.PreToolUse[0].hooks[0].command, /helix-hook\.mjs" pretooluse$/);
 
     const vbs = read(path.join(env.startupDir, "helix-presence.vbs"));

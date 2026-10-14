@@ -342,7 +342,12 @@ export function createMcpServer(ctx: McpContext, deps: McpDeps): McpServer {
     });
   tool("write_file", "Create or overwrite a text file.",
     { path: z.string().min(1), content: z.string(), createDirs: z.boolean().optional() },
-    ({ path, content, createDirs }) => ok(pc.writeFile(path, content, createDirs)));
+    async ({ path, content, createDirs }, signal) => {
+      // Ordinary files are written at once; credentials, security config and startup locations wait for the user.
+      const d = await deps.policy.authorize({ tool: "write_file", input: { path } }, { sessionId: ctx.sessionId, source: "tool", signal });
+      if (!d.allowed) return fail(d.message);
+      return ok(pc.writeFile(path, content, createDirs));
+    });
   tool("stop_process", "Stop a process (and its children) by pid.", { pid: z.number().int() }, async ({ pid }) => ok(await pc.stopProcess(pid)));
 
   tool("create_status_watch",

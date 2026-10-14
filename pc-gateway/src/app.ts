@@ -32,7 +32,7 @@ import { FanOutNotifier, LivePushNotifier } from "./notifications/live-push.js";
 import { SessionIndexer, type AgentHomes } from "./discovery/indexer.js";
 import { RouterService } from "./router/router.js";
 import { writeToPeer } from "./discovery/peer.js";
-import { currentSession, desktop } from "./mcp/desktop.js";
+import { currentSession, desktop, packageRoot } from "./mcp/desktop.js";
 import { registerMcp } from "./mcp/http.js";
 import { SessionActivity } from "./monitoring/session-activity.js";
 import { WatcherManager } from "./monitoring/watcher-manager.js";
@@ -44,6 +44,7 @@ import { AgentTokens } from "./mcp/scopes.js";
 import { ApprovalService } from "./permissions/approvals.js";
 import { PolicyEngine } from "./permissions/policy.js";
 import { TrustGrants } from "./permissions/trust-grants.js";
+import { configureSensitivePaths } from "./permissions/sensitive-paths.js";
 import type { AgentProvider } from "./providers/provider.js";
 import { EventBus, SessionManager } from "./sessions/manager.js";
 import { MessageStore, SessionRegistry } from "./sessions/registry.js";
@@ -105,6 +106,8 @@ export async function buildGateway(
   const approvals = new ApprovalService(db, manager.bus, manager.messages, config.approvalTtlMs);
   const policy = new PolicyEngine(approvals);
   const trust = new TrustGrants(db);
+  // Helix's own data and its hooks/service scripts count as sensitive files wherever they are installed.
+  configureSensitivePaths({ dataDir: config.dataDir, gatewayRoot: packageRoot() });
   manager.setPolicy(policy);
   manager.setUsage(new UsageStore(db));
   if (config.discovery) {

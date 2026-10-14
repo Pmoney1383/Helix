@@ -3,7 +3,10 @@
 // This is deliberately conservative. A shell command can't be fully analysed statically, so the
 // rules are: (1) known deletion verbs/APIs anywhere in the command, including inside wrappers like
 // `cmd /c` or `bash -c`; (2) anything we can't inspect (encoded/obfuscated commands, piping a download
-// into a shell) also needs approval. False positives cost one tap on the phone; false negatives cost files.
+// into a shell) also needs approval; (3) changing a sensitive file (credentials, agent or Helix security
+// config, startup/persistence locations; see sensitive-paths.ts), by an edit tool or a command, needs approval.
+// Ordinary project edits never ask. False positives cost one tap on the phone; false negatives cost files.
+import { sensitiveCommandReasons, sensitiveReason } from "./sensitive-paths.js";
 
 export interface Action {
   /** Claude tool name ("Bash", "Write", "mcp__x__delete_thing") or an MCP tool name. */
@@ -19,7 +22,14 @@ export interface Classification {
 }
 
 const SHELL_TOOLS = new Set(["bash", "powershell", "run_command", "shell", "pwsh"]);
-const FILE_WRITE_TOOLS = new Set(["write", "edit", "multiedit", "notebookedit", "write_file"]);
+const FILE_WRITE_TOOLS = new Set(["write", "edit", "multiedit", "notebookedit", "write_file", "apply_patch"]);
+
+/** Every path a file-writing tool says it will change. */
+function writtenPaths(input: Record<string, unknown>): string[] {
+  const one = [input["file_path"], input["path"], input["notebook_path"]].filter((p): p is string => typeof p === "string");
+  const many = Array.isArray(input["paths"]) ? input["paths"].filter((p): p is string => typeof p === "string") : [];
+  return [...one, ...many];
+}
 
 /** Verbs that delete files/dirs when they are the command word. */
 const DELETE_COMMANDS = new Set([
@@ -93,13 +103,29 @@ export function classify(action: Action): Classification {
     const r = classifyCommand(command, 0);
     r.reasons.forEach((x) => reasons.add(x));
     opaque = r.opaque;
+    sensitiveCommandReasons(command).forEach((x) => reasons.add(x));
   } else if (FILE_WRITE_TOOLS.has(tool) || FILE_WRITE_TOOLS.has(baseTool)) {
-    // Creating or editing files is a normal action. Nothing to flag.
+    // Creating or editing files is a normal action, except where the file itself is sensitive.
+    for (const p of writtenPaths(action.input)) {
+      const why = sensitiveReason(p);
+      if (why) reasons.add(`modifies ${why}: ${p}`);
+    }
   } else if (DESTRUCTIVE_TOOL_NAME.test(baseTool)) {
     reasons.add(`tool "${action.tool}" is named like a destructive operation`);
   }
 
   return { destructive: reasons.size > 0 || opaque, reasons: [...reasons], opaque };
+}
+
+/** Only the "changes a sensitive file or makes something persist" part of `classify` (no deletion or opacity rules). */
+export function sensitiveChange(action: Action): string[] {
+  const tool = action.tool.toLowerCase();
+  const baseTool = tool.split("__").pop() ?? tool;
+  if (SHELL_TOOLS.has(tool) || SHELL_TOOLS.has(baseTool)) return sensitiveCommandReasons(String(action.input["command"] ?? action.input["cmd"] ?? ""));
+  if (FILE_WRITE_TOOLS.has(tool) || FILE_WRITE_TOOLS.has(baseTool)) {
+    return writtenPaths(action.input).flatMap((p) => { const why = sensitiveReason(p); return why ? [`modifies ${why}: ${p}`] : []; });
+  }
+  return [];
 }
 
 function classifyCommand(command: string, depth: number): { reasons: string[]; opaque: boolean } {

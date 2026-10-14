@@ -97,7 +97,13 @@ export class CodexProvider implements AgentProvider {
     const threadId = o.providerSessionId;
     const q = new Queue<RpcNotification>();
     const fileItems = new Map<string, { changes?: { path: string; kind: unknown }[] }>();
-    const unsubscribe = server.subscribe(threadId, (n) => q.push(n));
+    const unsubscribe = server.subscribe(threadId, (n) => {
+      // Record what a file change touches as soon as it is announced, not when the loop below gets to it: Codex's request to
+      // approve that change can be answered before the loop catches up, and the approval decision depends on this list.
+      const it = n.method === "item/started" ? n.params?.item : undefined;
+      if (it?.type === "fileChange" && typeof it.id === "string") fileItems.set(it.id, it);
+      q.push(n);
+    });
     const unsetHandler = server.setHandler(threadId, (req) => this.answer(req, o, fileItems, (text) => q.push({ method: "helix/note", params: { text } })));
 
     let turnId: string | undefined;
@@ -219,9 +225,13 @@ export class CodexProvider implements AgentProvider {
         return { decision: d.allow ? "accept" : "decline" };
       }
       case "item/fileChange/requestApproval": {
-        const changes = fileItems.get(p.itemId)?.changes ?? [];
+        const item = fileItems.get(p.itemId);
+        const changes = item?.changes ?? [];
         const deletes = changes.filter((c) => isDelete(c.kind));
-        const d = await approve(deletes.length
+        // Not knowing what a patch touches must never read as "harmless": ask, as for a delete.
+        const d = await approve(!item || !changes.length
+          ? { tool: "delete_file", input: { paths: ["(Helix could not see which files this change touches)"] } }
+          : deletes.length
           ? { tool: "delete_file", input: { paths: deletes.map((c) => c.path) } }
           : { tool: "apply_patch", input: { paths: changes.map((c) => c.path) } });
         return { decision: d.allow ? "accept" : "decline" };
@@ -237,7 +247,9 @@ export class CodexProvider implements AgentProvider {
       case "applyPatchApproval": {
         const entries = Object.entries(p.fileChanges ?? {}) as [string, { type?: string }][];
         const deletes = entries.filter(([, c]) => c?.type === "delete").map(([path]) => path);
-        const d = await approve(deletes.length ? { tool: "delete_file", input: { paths: deletes } } : { tool: "apply_patch", input: { paths: entries.map(([f]) => f) } });
+        const d = await approve(!entries.length
+          ? { tool: "delete_file", input: { paths: ["(Helix could not see which files this change touches)"] } }
+          : deletes.length ? { tool: "delete_file", input: { paths: deletes } } : { tool: "apply_patch", input: { paths: entries.map(([f]) => f) } });
         return { decision: d.allow ? "approved" : { denied: { rejection: d.reason ?? "rejected" } } };
       }
       case "mcpServer/elicitation/request": {

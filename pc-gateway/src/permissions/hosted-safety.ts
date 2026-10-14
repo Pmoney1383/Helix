@@ -3,6 +3,7 @@
 // refused outright (there is no approval prompt for hosted callers; use the phone app or a local agent for those).
 import path from "node:path";
 import { classify } from "./classifier.js";
+import { CREDENTIAL_PATTERNS } from "./sensitive-paths.js";
 
 export interface Verdict {
   allowed: boolean;
@@ -12,26 +13,9 @@ export interface Verdict {
 const MAX_COMMAND_LENGTH = 2000;
 
 /** Things a hosted caller must never read or touch: credentials, keys, tokens, Helix's own state. */
-const PROTECTED_NAMES = [
-  /(^|[\\/])\.env(\.[^\\/]*)?$/i,
-  /\.(p8|pem|key|pfx|p12|ppk|kdbx|keystore|jks)$/i,
-  /(^|[\\/])id_(rsa|ed25519|ecdsa|dsa)(\.pub)?$/i,
-  /(^|[\\/])\.(ssh|aws|azure|gnupg|kube|docker|gcloud)([\\/]|$)/i,
-  /(^|[\\/])\.config[\\/]gh([\\/]|$)/i,
-  /(^|[\\/])\.(npmrc|pypirc|netrc|git-credentials|pgpass)$/i,
-  /(^|[\\/])\.helix([\\/]|$)/i,
-  /(^|[\\/])\.claude[\\/](\.credentials\.json|settings(\.local)?\.json)$/i,
-  /(^|[\\/])\.claude\.json$/i,
-  /(^|[\\/])\.codex[\\/](auth\.json|config\.toml)$/i,
-  /(^|[\\/])(login data|cookies|web data|local state)$/i,
-  /(^|[\\/])(credentials|secrets?)(\.[a-z]+)?$/i,
-  /helix\.db(-wal|-shm)?$/i,
-  /(^|[\\/])(sam|security|system)$/i,
-];
-
 export function isProtectedPath(p: string, dataDir?: string): boolean {
   const norm = path.resolve(p).replace(/\//g, "\\");
-  if (PROTECTED_NAMES.some((re) => re.test(norm))) return true;
+  if (CREDENTIAL_PATTERNS.some((re) => re.test(norm))) return true;
   if (dataDir) {
     const d = path.resolve(dataDir).toLowerCase();
     const n = norm.toLowerCase();
